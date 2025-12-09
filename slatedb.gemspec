@@ -10,13 +10,13 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Ruby bindings for SlateDB"
   spec.description = "A cloud-native embedded key-value store built on object storage"
-  spec.homepage = "https://github.com/slatedb/slatedb-rb"
+  spec.homepage = "https://github.com/catkins/slatedb-rb"
   spec.license = "Apache-2.0"
   spec.required_ruby_version = ">= 3.1.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/slatedb/slatedb-rb"
-  spec.metadata["changelog_uri"] = "https://github.com/slatedb/slatedb-rb/blob/main/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = "https://github.com/catkins/slatedb-rb"
+  spec.metadata["changelog_uri"] = "https://github.com/catkins/slatedb-rb/blob/main/CHANGELOG.md"
 
   spec.files = Dir[
     "lib/**/*.rb",

@@ -2,7 +2,7 @@
 
 Ruby bindings for [SlateDB](https://slatedb.io), a cloud-native embedded key-value store built on object storage.
 
-[![Build Status](https://github.com/slatedb/slatedb-rb/actions/workflows/ci.yml/badge.svg)](https://github.com/slatedb/slatedb-rb/actions)
+[![Build Status](https://github.com/catkins/slatedb-rb/actions/workflows/ci.yml/badge.svg)](https://github.com/catkins/slatedb-rb/actions)
 
 ## Thread Safety
 
@@ -397,7 +397,7 @@ bundle exec rspec spec/transaction_spec.rb
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/slatedb/slatedb-rb.
+Bug reports and pull requests are welcome on GitHub at https://github.com/catkins/slatedb-rb.
 
 ## License
 
