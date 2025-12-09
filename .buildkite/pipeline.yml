@@ -1,0 +1,27 @@
+steps:
+  - group: ":ruby: Build & Test"
+    steps:
+      - label: ":ruby: Ruby {{matrix.ruby}}"
+        command:
+          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          - source ~/.cargo/env
+          - bundle install
+          - bundle exec rake compile
+          - bundle exec rake spec
+        image: "ruby:{{matrix.ruby}}"
+        matrix:
+          setup:
+            ruby:
+              - "3.2"
+              - "3.3"
+              - "3.4"
+        env:
+          BUNDLE_PATH: vendor/bundle
+
+  - label: ":rubocop: Lint"
+    command:
+      - bundle install
+      - bundle exec rubocop
+    image: "ruby:3.4"
+    env:
+      BUNDLE_PATH: vendor/bundle
