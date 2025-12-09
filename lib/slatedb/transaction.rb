@@ -54,7 +54,7 @@ module SlateDb
     # @return [Iterator] An iterator over key-value pairs
     #
     def scan(start_key, end_key = nil, durability_filter: nil, dirty: nil,
-             read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &block)
+             read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
       opts = {}
       opts[:durability_filter] = durability_filter.to_s if durability_filter
       opts[:dirty] = dirty unless dirty.nil?
@@ -69,7 +69,7 @@ module SlateDb
              end
 
       if block_given?
-        iter.each(&block)
+        iter.each(&)
       else
         iter
       end
