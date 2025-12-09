@@ -20,7 +20,7 @@ RSpec.describe SlateDb::Iterator do
           entries << entry
         end
 
-        expect(entries).to eq([["a", "1"], ["b", "2"], ["c", "3"]])
+        expect(entries).to eq([%w[a 1], %w[b 2], %w[c 3]])
       end
     end
 
@@ -29,7 +29,7 @@ RSpec.describe SlateDb::Iterator do
         db.put("key", "value")
 
         iter = db.scan("key")
-        expect(iter.next_entry).to eq(["key", "value"])
+        expect(iter.next_entry).to eq(%w[key value])
         expect(iter.next_entry).to be_nil
       end
     end
@@ -60,8 +60,8 @@ RSpec.describe SlateDb::Iterator do
         iter = db.scan("a")
         iter.seek("c")
 
-        expect(iter.next_entry).to eq(["c", "3"])
-        expect(iter.next_entry).to eq(["d", "4"])
+        expect(iter.next_entry).to eq(%w[c 3])
+        expect(iter.next_entry).to eq(%w[d 4])
         expect(iter.next_entry).to be_nil
       end
     end
@@ -83,10 +83,9 @@ RSpec.describe SlateDb::Iterator do
         db.put("b", "2")
 
         iter = db.scan("a")
-        entries = []
-        iter.each { |entry| entries << entry }
+        entries = iter.map { |entry| entry }
 
-        expect(entries).to eq([["a", "1"], ["b", "2"]])
+        expect(entries).to eq([%w[a 1], %w[b 2]])
       end
     end
 
@@ -99,7 +98,7 @@ RSpec.describe SlateDb::Iterator do
         enum = iter.each
 
         expect(enum).to be_a(Enumerator)
-        expect(enum.to_a).to eq([["a", "1"], ["b", "2"]])
+        expect(enum.to_a).to eq([%w[a 1], %w[b 2]])
       end
     end
   end
@@ -124,9 +123,9 @@ RSpec.describe SlateDb::Iterator do
         db.put("c", "3")
 
         iter = db.scan("a")
-        result = iter.select { |k, _v| k != "b" }
+        result = iter.select { |k, _v| k == "a" || k == "c" }
 
-        expect(result).to eq([["a", "1"], ["c", "3"]])
+        expect(result).to eq([%w[a 1], %w[c 3]])
       end
     end
 
@@ -136,7 +135,7 @@ RSpec.describe SlateDb::Iterator do
         db.put("b", "2")
 
         iter = db.scan("a")
-        expect(iter.first).to eq(["a", "1"])
+        expect(iter.first).to eq(%w[a 1])
       end
     end
 
@@ -147,7 +146,7 @@ RSpec.describe SlateDb::Iterator do
         db.put("z", "26")
 
         iter = db.scan("x")
-        expect(iter.to_a).to eq([["x", "24"], ["y", "25"], ["z", "26"]])
+        expect(iter.to_a).to eq([%w[x 24], %w[y 25], %w[z 26]])
       end
     end
   end
@@ -191,7 +190,7 @@ RSpec.describe "Database#scan" do
         iter = db.scan("b", "d")
         entries = iter.to_a
 
-        expect(entries).to eq([["b", "2"], ["c", "3"]])
+        expect(entries).to eq([%w[b 2], %w[c 3]])
       end
     end
 
@@ -204,7 +203,7 @@ RSpec.describe "Database#scan" do
         iter = db.scan("b")
         entries = iter.to_a
 
-        expect(entries).to eq([["b", "2"], ["c", "3"]])
+        expect(entries).to eq([%w[b 2], %w[c 3]])
       end
     end
   end
@@ -218,7 +217,7 @@ RSpec.describe "Database#scan" do
         entries = []
         db.scan("a") { |k, v| entries << [k, v] }
 
-        expect(entries).to eq([["a", "1"], ["b", "2"]])
+        expect(entries).to eq([%w[a 1], %w[b 2]])
       end
     end
   end

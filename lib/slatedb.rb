@@ -5,7 +5,7 @@ require_relative "slatedb/version"
 # Load the native extension
 begin
   RUBY_VERSION =~ /(\d+\.\d+)/
-  require "slatedb/#{$1}/slatedb"
+  require "slatedb/#{Regexp.last_match(1)}/slatedb"
 rescue LoadError
   require "slatedb/slatedb"
 end

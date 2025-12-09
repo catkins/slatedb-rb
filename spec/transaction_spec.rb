@@ -60,7 +60,7 @@ RSpec.describe SlateDb::Transaction do
         txn.put("c", "3")
 
         entries = txn.scan("a").to_a
-        expect(entries).to eq([["a", "1"], ["b", "2"], ["c", "3"]])
+        expect(entries).to eq([%w[a 1], %w[b 2], %w[c 3]])
 
         txn.commit
       end
@@ -182,12 +182,12 @@ RSpec.describe "Database#transaction" do
       SlateDb::Database.open(tmpdir) do |db|
         db.put("key", "original")
 
-        expect {
+        expect do
           db.transaction do |txn|
             txn.put("key", "modified")
             raise "oops"
           end
-        }.to raise_error("oops")
+        end.to raise_error("oops")
 
         expect(db.get("key")).to eq("original")
       end
@@ -195,11 +195,11 @@ RSpec.describe "Database#transaction" do
 
     it "re-raises the original exception" do
       SlateDb::Database.open(tmpdir) do |db|
-        expect {
-          db.transaction do |txn|
+        expect do
+          db.transaction do |_txn|
             raise ArgumentError, "test error"
           end
-        }.to raise_error(ArgumentError, "test error")
+        end.to raise_error(ArgumentError, "test error")
       end
     end
   end

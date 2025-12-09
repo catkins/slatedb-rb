@@ -55,7 +55,7 @@ RSpec.describe SlateDb::Snapshot do
         snapshot = db.snapshot
         entries = snapshot.scan("a").to_a
 
-        expect(entries).to eq([["a", "1"], ["b", "2"], ["c", "3"]])
+        expect(entries).to eq([%w[a 1], %w[b 2], %w[c 3]])
         snapshot.close
       end
     end
@@ -72,7 +72,7 @@ RSpec.describe SlateDb::Snapshot do
 
         # Snapshot only sees original data
         entries = snapshot.scan("a").to_a
-        expect(entries).to eq([["a", "1"], ["b", "2"]])
+        expect(entries).to eq([%w[a 1], %w[b 2]])
 
         snapshot.close
       end
@@ -87,7 +87,7 @@ RSpec.describe SlateDb::Snapshot do
         results = []
         snapshot.scan("x") { |k, v| results << [k, v] }
 
-        expect(results).to eq([["x", "1"], ["y", "2"]])
+        expect(results).to eq([%w[x 1], %w[y 2]])
         snapshot.close
       end
     end
@@ -153,12 +153,12 @@ RSpec.describe "Database#snapshot" do
       SlateDb::Database.open(tmpdir) do |db|
         snapshot_ref = nil
 
-        expect {
+        expect do
           db.snapshot do |snap|
             snapshot_ref = snap
             raise "oops"
           end
-        }.to raise_error("oops")
+        end.to raise_error("oops")
 
         expect(snapshot_ref.closed?).to be true
       end

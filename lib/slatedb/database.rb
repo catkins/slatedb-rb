@@ -23,14 +23,18 @@ module SlateDb
       # @example Open with S3 backend
       #   db = SlateDb::Database.open("/tmp/mydb", url: "s3://mybucket/path")
       #
-      def open(path, url: nil, &block)
+      def open(path, url: nil)
         db = _open(path, url)
 
         if block_given?
           begin
             yield db
           ensure
-            db.close rescue nil
+            begin
+              db.close
+            rescue StandardError
+              nil
+            end
           end
         else
           db
@@ -202,7 +206,7 @@ module SlateDb
     #     b.delete("old_key")
     #   end
     #
-    def batch(await_durable: nil, &block)
+    def batch(await_durable: nil)
       b = WriteBatch.new
       yield b
       write(b, await_durable: await_durable)
@@ -259,8 +263,12 @@ module SlateDb
         result = yield txn
         txn.commit
         result
-      rescue => e
-        txn.rollback rescue nil
+      rescue StandardError
+        begin
+          txn.rollback
+        rescue StandardError
+          nil
+        end
         raise
       end
     end
@@ -281,14 +289,18 @@ module SlateDb
     #     snap.get("key2")
     #   end # automatically closed
     #
-    def snapshot(&block)
+    def snapshot
       snap = _snapshot
 
       if block_given?
         begin
           yield snap
         ensure
-          snap.close rescue nil
+          begin
+            snap.close
+          rescue StandardError
+            nil
+          end
         end
       else
         snap

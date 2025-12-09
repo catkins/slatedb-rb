@@ -29,7 +29,7 @@ module SlateDb
       #
       def open(path, url: nil, checkpoint_id: nil,
                manifest_poll_interval: nil, checkpoint_lifetime: nil,
-               max_memtable_bytes: nil, &block)
+               max_memtable_bytes: nil)
         opts = {}
         opts[:manifest_poll_interval] = manifest_poll_interval if manifest_poll_interval
         opts[:checkpoint_lifetime] = checkpoint_lifetime if checkpoint_lifetime
@@ -41,7 +41,11 @@ module SlateDb
           begin
             yield reader
           ensure
-            reader.close rescue nil
+            begin
+              reader.close
+            rescue StandardError
+              nil
+            end
           end
         else
           reader

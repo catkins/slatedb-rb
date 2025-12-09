@@ -12,15 +12,15 @@ RSpec.describe SlateDb::Reader do
   end
 
   describe ".open" do
-    # Note: Reader requires a persistent object store (not in-memory) to work properly
+    # NOTE: Reader requires a persistent object store (not in-memory) to work properly
     # because it needs to read manifests written by a Database instance.
     # These tests verify the basic API structure.
 
     it "requires an initialized database" do
       # Reader cannot open a path with no manifest
-      expect {
+      expect do
         SlateDb::Reader.open("nonexistent_path_#{SecureRandom.hex(8)}")
-      }.to raise_error(SlateDb::DataError)
+      end.to raise_error(SlateDb::DataError)
     end
   end
 
@@ -29,7 +29,7 @@ RSpec.describe SlateDb::Reader do
       expect(SlateDb::Reader).to respond_to(:open)
     end
 
-    # Note: Instance method tests would require a real persistent storage backend
+    # NOTE: Instance method tests would require a real persistent storage backend
   end
 
   describe "read-only behavior" do

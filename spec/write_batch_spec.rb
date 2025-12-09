@@ -37,9 +37,9 @@ RSpec.describe SlateDb::WriteBatch do
     it "supports method chaining" do
       SlateDb::Database.open(tmpdir) do |db|
         batch = SlateDb::WriteBatch.new
-          .put("a", "1")
-          .put("b", "2")
-          .put("c", "3")
+                                   .put("a", "1")
+                                   .put("b", "2")
+                                   .put("c", "3")
 
         db.write(batch)
 
@@ -89,9 +89,9 @@ RSpec.describe SlateDb::WriteBatch do
         db.put("existing", "old_value")
 
         batch = SlateDb::WriteBatch.new
-          .put("new_key", "new_value")
-          .put("existing", "updated_value")
-          .delete("to_delete")
+                                   .put("new_key", "new_value")
+                                   .put("existing", "updated_value")
+                                   .delete("to_delete")
 
         db.put("to_delete", "will_be_deleted")
         db.write(batch)
@@ -145,8 +145,8 @@ RSpec.describe "Database#write" do
 
         db.batch do |b|
           b.put("a", "1")
-            .put("b", "2")
-            .delete("old_key")
+           .put("b", "2")
+           .delete("old_key")
         end
 
         expect(db.get("a")).to eq("1")

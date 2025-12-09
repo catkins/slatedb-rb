@@ -18,7 +18,7 @@ module SlateDb
     #   iter.map { |k, v| [k.upcase, v] }
     #   iter.select { |k, v| k.start_with?("user:") }
     #
-    def each(&block)
+    def each
       return to_enum(:each) unless block_given?
 
       while (entry = next_entry)

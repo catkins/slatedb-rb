@@ -18,18 +18,16 @@ RSpec.describe "Thread Safety" do
               db.put(key, "value_#{j}")
               value = db.get(key)
 
-              unless value == "value_#{j}"
-                mutex.synchronize { errors << "Expected value_#{j}, got #{value.inspect}" }
-              end
+              mutex.synchronize { errors << "Expected value_#{j}, got #{value.inspect}" } unless value == "value_#{j}"
             end
-          rescue => e
+          rescue StandardError => e
             mutex.synchronize { errors << "Thread #{i} error: #{e.message}" }
           end
         end
 
         threads.each(&:join)
 
-        expect(errors).to be_empty, "Thread errors: #{errors.join(', ')}"
+        expect(errors).to be_empty, "Thread errors: #{errors.join(", ")}"
 
         # Verify all keys are present
         5.times do |i|
@@ -44,7 +42,7 @@ RSpec.describe "Thread Safety" do
     it "handles concurrent scans" do
       SlateDb::Database.open("/tmp/thread_scan_#{SecureRandom.hex(4)}") do |db|
         # Write test data
-        100.times { |i| db.put("key_#{i.to_s.rjust(3, '0')}", "value_#{i}") }
+        100.times { |i| db.put("key_#{i.to_s.rjust(3, "0")}", "value_#{i}") }
 
         errors = []
         mutex = Mutex.new
@@ -53,7 +51,7 @@ RSpec.describe "Thread Safety" do
           Thread.new do
             3.times do
               count = 0
-              db.scan("key_").each do |key, value|
+              db.scan("key_").each do |_key, _value|
                 count += 1
               end
 
@@ -61,13 +59,13 @@ RSpec.describe "Thread Safety" do
                 mutex.synchronize { errors << "Thread #{i} scan returned #{count} items, expected 100" }
               end
             end
-          rescue => e
+          rescue StandardError => e
             mutex.synchronize { errors << "Thread #{i} error: #{e.message}" }
           end
         end
 
         threads.each(&:join)
-        expect(errors).to be_empty, "Thread errors: #{errors.join(', ')}"
+        expect(errors).to be_empty, "Thread errors: #{errors.join(", ")}"
       end
     end
 
@@ -85,27 +83,25 @@ RSpec.describe "Thread Safety" do
         # Some may fail due to serialization conflicts, which is expected
         threads = 5.times.map do |i|
           Thread.new do
-            3.times do |j|
-              begin
-                db.transaction(isolation: :serializable) do |txn|
-                  val = txn.get("counter").to_i
-                  txn.put("counter", (val + 1).to_s)
-                end
-                mutex.synchronize { successful_commits += 1 }
-              rescue => e
-                if e.message.include?("transaction conflict") || e.message.include?("Transaction")
-                  # Expected - serialization conflict
-                  mutex.synchronize { conflicts += 1 }
-                else
-                  mutex.synchronize { errors << "Thread #{i} error: #{e.class}: #{e.message}" }
-                end
+            3.times do |_j|
+              db.transaction(isolation: :serializable) do |txn|
+                val = txn.get("counter").to_i
+                txn.put("counter", (val + 1).to_s)
+              end
+              mutex.synchronize { successful_commits += 1 }
+            rescue StandardError => e
+              if e.message.include?("transaction conflict") || e.message.include?("Transaction")
+                # Expected - serialization conflict
+                mutex.synchronize { conflicts += 1 }
+              else
+                mutex.synchronize { errors << "Thread #{i} error: #{e.class}: #{e.message}" }
               end
             end
           end
         end
 
         threads.each(&:join)
-        expect(errors).to be_empty, "Unexpected errors: #{errors.join(', ')}"
+        expect(errors).to be_empty, "Unexpected errors: #{errors.join(", ")}"
 
         # Some transactions should succeed
         expect(successful_commits).to be > 0
