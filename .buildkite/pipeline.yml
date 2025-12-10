@@ -1,51 +1,23 @@
 steps:
   - group: ":ruby: Build & Test"
     steps:
-      # TODO: when we add support for matrix in the image attribute
-      # convert to matrix build
       - label: ":ruby: Ruby 3.2"
-        command:
-          - apt-get update && apt-get install -y libclang-dev
-          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          - source ~/.cargo/env
-          - bundle install
-          - bundle exec rake compile
-          - bundle exec rake spec
+        command: .buildkite/steps/build-and-test.sh
         image: "ruby:3.2"
-        env:
-          BUNDLE_PATH: vendor/bundle
 
       - label: ":ruby: Ruby 3.3"
-        command:
-          - apt-get update && apt-get install -y libclang-dev
-          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          - source ~/.cargo/env
-          - bundle install
-          - bundle exec rake compile
-          - bundle exec rake spec
+        command: .buildkite/steps/build-and-test.sh
         image: "ruby:3.3"
-        env:
-          BUNDLE_PATH: vendor/bundle
 
       - label: ":ruby: Ruby 3.4"
-        command:
-          - apt-get update && apt-get install -y libclang-dev
-          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          - source ~/.cargo/env
-          - bundle install
-          - bundle exec rake compile
-          - bundle exec rake spec
+        command: .buildkite/steps/build-and-test.sh
         image: "ruby:3.4"
-        env:
-          BUNDLE_PATH: vendor/bundle
 
   - label: ":rubocop: Lint"
     command:
       - bundle install
       - bundle exec rubocop
     image: "ruby:3.4"
-    env:
-      BUNDLE_PATH: vendor/bundle
 
   - label: ":rust: Cargo Check & Clippy"
     command:
