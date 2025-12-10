@@ -2,6 +2,8 @@
 
 module SlateDb
   class Database
+    private_class_method :new
+
     class << self
       # Open a database at the given path.
       #
