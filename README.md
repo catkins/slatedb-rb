@@ -4,33 +4,13 @@ Ruby bindings for [SlateDB](https://slatedb.io), a cloud-native embedded key-val
 
 [![Build status](https://badge.buildkite.com/a7ae51f3a0bc7809cf66981641ec47b3c70db8cf349a5e462f.svg)](https://buildkite.com/catkins-test/slatedb-rb) [![Gem Version](https://badge.fury.io/rb/slatedb.svg)](https://badge.fury.io/rb/slatedb)
 
-## Thread Safety
+## Production Readiness
 
-**SlateDB is fully thread-safe and optimized for concurrent access.**
+These bindings are still in early development, and while SlateDB itself is used in Production, these bindings have yet to be. Contributions are welcome!
 
-- The `Database` class can be safely shared across multiple Ruby threads
-- All operations (get, put, delete, scan, transactions) are thread-safe
-- The Ruby bindings release the Global VM Lock (GVL) during I/O operations, allowing other Ruby threads to run concurrently
-- Perfect for use with multi-threaded Ruby applications like Puma, Sidekiq, and concurrent test suites
+### TODO
 
-```ruby
-db = SlateDb::Database.open("/tmp/mydb")
-
-# Safe to use from multiple threads
-threads = 10.times.map do |i|
-  Thread.new do
-    db.put("key-#{i}", "value-#{i}")
-    db.get("key-#{i}")
-  end
-end
-
-threads.each(&:join)
-```
-
-**Implementation details:**
-- The underlying SlateDB library uses `Arc` (atomic reference counting) and `RwLock` for internal state management
-- I/O operations release the Ruby GVL using `rb_thread_call_without_gvl`, preventing blocking other threads
-- A shared Tokio multi-threaded runtime handles all async operations efficiently
+- [ ] Cross-compile native extensions
 
 ## Installation
 
@@ -51,6 +31,9 @@ Or install it yourself as:
 ```bash
 gem install slatedb
 ```
+
+> [!IMPORTANT]
+> This gem currently requires a working Rust toolchain to install until the dependencies are cross-compiled.
 
 ## Usage
 
@@ -347,6 +330,34 @@ db.put("key", "value")
 db.flush
 ```
 
+## Thread Safety
+
+**SlateDB is fully thread-safe and optimized for concurrent access.**
+
+- The `Database` class can be safely shared across multiple Ruby threads
+- All operations (get, put, delete, scan, transactions) are thread-safe
+- The Ruby bindings release the Global VM Lock (GVL) during I/O operations, allowing other Ruby threads to run concurrently
+- Perfect for use with multi-threaded Ruby applications like Puma, Sidekiq, and concurrent test suites
+
+```ruby
+db = SlateDb::Database.open("/tmp/mydb")
+
+# Safe to use from multiple threads
+threads = 10.times.map do |i|
+  Thread.new do
+    db.put("key-#{i}", "value-#{i}")
+    db.get("key-#{i}")
+  end
+end
+
+threads.each(&:join)
+```
+
+**Implementation details:**
+- The underlying SlateDB library uses `Arc` (atomic reference counting) and `RwLock` for internal state management
+- I/O operations release the Ruby GVL using `rb_thread_call_without_gvl`, preventing blocking other threads
+- A shared Tokio multi-threaded runtime handles all async operations efficiently
+
 ## Error Handling
 
 SlateDB defines several exception classes:
@@ -398,6 +409,8 @@ bundle exec rspec spec/transaction_spec.rb
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/catkins/slatedb-rb.
+
+Also, find me on the [SlateDB Discord Server](https://discord.gg/mHYmGy5MgA).
 
 ## License
 
