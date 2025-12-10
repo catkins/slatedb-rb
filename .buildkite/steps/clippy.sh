@@ -1,14 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install libclang for bindgen
+echo "--- :debian: Installing dependencies"
 apt-get update && apt-get install -y libclang-dev
 
-# Install Rust
+echo "--- :rust: Installing Rust"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 
-# Run cargo check and clippy
 cd ext/slatedb
+
+echo "+++ :rust: Cargo check"
 cargo check --all-targets
+
+echo "+++ :clippy: Clippy"
 cargo clippy --all-targets -- -D warnings

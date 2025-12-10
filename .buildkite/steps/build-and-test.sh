@@ -1,14 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Install libclang for bindgen
+echo "--- :debian: Installing dependencies"
 apt-get update && apt-get install -y libclang-dev
 
-# Install Rust
+echo "--- :rust: Installing Rust"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 
-# Install gems and build
+echo "--- :bundler: Installing gems"
 bundle install
+
+echo "+++ :rust: Compiling native extension"
 bundle exec rake compile
+
+echo "+++ :rspec: Running tests"
 bundle exec rake spec
