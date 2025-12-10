@@ -8,7 +8,7 @@ use slatedb::DbReader;
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
 use crate::runtime::block_on_result;
-use crate::utils::get_optional;
+use crate::utils::{get_optional, resolve_object_store};
 
 /// Ruby wrapper for SlateDB Reader.
 ///
@@ -52,7 +52,7 @@ impl Reader {
 
         let reader = block_on_result(async {
             let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
-                slatedb::Db::resolve_object_store(url)?
+                resolve_object_store(url)?
             } else {
                 Arc::new(object_store::memory::InMemory::new())
             };

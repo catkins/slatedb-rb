@@ -11,7 +11,7 @@ use crate::iterator::Iterator;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
-use crate::utils::get_optional;
+use crate::utils::{get_optional, resolve_object_store};
 use crate::write_batch::WriteBatch;
 
 /// Ruby wrapper for SlateDB database.
@@ -33,8 +33,8 @@ impl Database {
     /// A new Database instance
     pub fn open(path: String, url: Option<String>) -> Result<Self, Error> {
         let db = block_on_result(async {
-            let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
-                Db::resolve_object_store(url)?
+            let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url_str) = url {
+                resolve_object_store(url_str)?
             } else {
                 Arc::new(InMemory::new())
             };

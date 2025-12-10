@@ -7,7 +7,7 @@ use slatedb::config::{CheckpointOptions, GarbageCollectorOptions};
 
 use crate::errors::invalid_argument_error;
 use crate::runtime::{block_on, block_on_result};
-use crate::utils::get_optional;
+use crate::utils::{get_optional, resolve_object_store};
 
 /// Ruby wrapper for SlateDB Admin.
 ///
@@ -26,7 +26,7 @@ impl Admin {
     /// * `url` - Optional object store URL
     pub fn new(path: String, url: Option<String>) -> Result<Self, Error> {
         let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
-            block_on_result(async { slatedb::Db::resolve_object_store(url) })?
+            block_on_result(async { resolve_object_store(url) })?
         } else {
             Arc::new(object_store::memory::InMemory::new())
         };
