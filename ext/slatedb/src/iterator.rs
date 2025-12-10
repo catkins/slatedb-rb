@@ -5,11 +5,17 @@ use magnus::{method, Error, Ruby};
 use slatedb::DbIterator;
 use tokio::sync::Mutex;
 
+use crate::errors::{internal_error, invalid_argument_error, map_error};
+use crate::runtime::block_on;
+
 /// Result type for raw byte key-value pairs.
 type ByteKvResult = Result<Option<(Vec<u8>, Vec<u8>)>, Error>;
 
-use crate::errors::{internal_error, invalid_argument_error, map_error};
-use crate::runtime::block_on;
+/// Internal error type for iterator operations (converted to Ruby errors after block_on).
+enum IteratorError {
+    Closed,
+    Slate(slatedb::Error),
+}
 
 /// Ruby wrapper for SlateDB iterator.
 ///
@@ -36,14 +42,19 @@ impl Iterator {
 
         let result = block_on(async {
             let mut guard = inner.lock().await;
-            let iter = guard
-                .as_mut()
-                .ok_or_else(|| internal_error("iterator has been closed"))?;
+            match guard.as_mut() {
+                Some(iter) => iter.next().await.map_err(IteratorError::Slate),
+                None => Err(IteratorError::Closed),
+            }
+        });
 
-            iter.next().await.map_err(map_error)
-        })?;
+        let kv = match result {
+            Ok(kv) => kv,
+            Err(IteratorError::Closed) => return Err(internal_error("iterator has been closed")),
+            Err(IteratorError::Slate(e)) => return Err(map_error(e)),
+        };
 
-        Ok(result.map(|kv| {
+        Ok(kv.map(|kv| {
             (
                 String::from_utf8_lossy(&kv.key).to_string(),
                 String::from_utf8_lossy(&kv.value).to_string(),
@@ -59,14 +70,19 @@ impl Iterator {
 
         let result = block_on(async {
             let mut guard = inner.lock().await;
-            let iter = guard
-                .as_mut()
-                .ok_or_else(|| internal_error("iterator has been closed"))?;
+            match guard.as_mut() {
+                Some(iter) => iter.next().await.map_err(IteratorError::Slate),
+                None => Err(IteratorError::Closed),
+            }
+        });
 
-            iter.next().await.map_err(map_error)
-        })?;
+        let kv = match result {
+            Ok(kv) => kv,
+            Err(IteratorError::Closed) => return Err(internal_error("iterator has been closed")),
+            Err(IteratorError::Slate(e)) => return Err(map_error(e)),
+        };
 
-        Ok(result.map(|kv| (kv.key.to_vec(), kv.value.to_vec())))
+        Ok(kv.map(|kv| (kv.key.to_vec(), kv.value.to_vec())))
     }
 
     /// Seek to a specific key position.
@@ -79,16 +95,19 @@ impl Iterator {
 
         let inner = self.inner.clone();
 
-        block_on(async {
+        let result = block_on(async {
             let mut guard = inner.lock().await;
-            let iter = guard
-                .as_mut()
-                .ok_or_else(|| internal_error("iterator has been closed"))?;
+            match guard.as_mut() {
+                Some(iter) => iter.seek(key.as_bytes()).await.map_err(IteratorError::Slate),
+                None => Err(IteratorError::Closed),
+            }
+        });
 
-            iter.seek(key.as_bytes()).await.map_err(map_error)
-        })?;
-
-        Ok(())
+        match result {
+            Ok(()) => Ok(()),
+            Err(IteratorError::Closed) => Err(internal_error("iterator has been closed")),
+            Err(IteratorError::Slate(e)) => Err(map_error(e)),
+        }
     }
 
     /// Close the iterator and release resources.

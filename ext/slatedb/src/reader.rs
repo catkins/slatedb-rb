@@ -5,9 +5,9 @@ use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{DbReaderOptions, DurabilityLevel, ReadOptions, ScanOptions};
 use slatedb::DbReader;
 
-use crate::errors::{invalid_argument_error, map_error};
+use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
-use crate::runtime::block_on;
+use crate::runtime::block_on_result;
 use crate::utils::get_optional;
 
 /// Ruby wrapper for SlateDB Reader.
@@ -50,9 +50,9 @@ impl Reader {
                 None
             };
 
-        let reader = block_on(async {
+        let reader = block_on_result(async {
             let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
-                slatedb::Db::resolve_object_store(url).map_err(map_error)?
+                slatedb::Db::resolve_object_store(url)?
             } else {
                 Arc::new(object_store::memory::InMemory::new())
             };
@@ -68,9 +68,7 @@ impl Reader {
                 options.max_memtable_bytes = max_bytes;
             }
 
-            DbReader::open(path, object_store, checkpoint_uuid, options)
-                .await
-                .map_err(map_error)
+            DbReader::open(path, object_store, checkpoint_uuid, options).await
         })?;
 
         Ok(Self {
@@ -84,8 +82,7 @@ impl Reader {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let result = block_on(async { self.inner.get(key.as_bytes()).await }).map_err(map_error)?;
-
+        let result = block_on_result(async { self.inner.get(key.as_bytes()).await })?;
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
     }
 
@@ -114,9 +111,8 @@ impl Reader {
             opts.dirty = dirty;
         }
 
-        let result = block_on(async { self.inner.get_with_options(key.as_bytes(), &opts).await })
-            .map_err(map_error)?;
-
+        let result =
+            block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
     }
 
@@ -126,8 +122,7 @@ impl Reader {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let result = block_on(async { self.inner.get(key.as_bytes()).await }).map_err(map_error)?;
-
+        let result = block_on_result(async { self.inner.get(key.as_bytes()).await })?;
         Ok(result.map(|b| b.to_vec()))
     }
 
@@ -140,12 +135,11 @@ impl Reader {
         let start_bytes = start.into_bytes();
         let end_bytes = end_key.map(|e| e.into_bytes());
 
-        let iter = block_on(async {
-            let range = match end_bytes {
+        let iter = block_on_result(async {
+            match end_bytes {
                 Some(end) => self.inner.scan(start_bytes..end).await,
                 None => self.inner.scan(start_bytes..).await,
-            };
-            range.map_err(map_error)
+            }
         })?;
 
         Ok(Iterator::new(iter))
@@ -196,12 +190,11 @@ impl Reader {
         let start_bytes = start.into_bytes();
         let end_bytes = end_key.map(|e| e.into_bytes());
 
-        let iter = block_on(async {
-            let range = match end_bytes {
+        let iter = block_on_result(async {
+            match end_bytes {
                 Some(end) => self.inner.scan_with_options(start_bytes..end, &opts).await,
                 None => self.inner.scan_with_options(start_bytes.., &opts).await,
-            };
-            range.map_err(map_error)
+            }
         })?;
 
         Ok(Iterator::new(iter))
@@ -209,7 +202,7 @@ impl Reader {
 
     /// Close the reader.
     pub fn close(&self) -> Result<(), Error> {
-        block_on(async { self.inner.close().await }).map_err(map_error)?;
+        block_on_result(async { self.inner.close().await })?;
         Ok(())
     }
 }

@@ -5,8 +5,8 @@ use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::admin::AdminBuilder;
 use slatedb::config::{CheckpointOptions, GarbageCollectorOptions};
 
-use crate::errors::{invalid_argument_error, map_error};
-use crate::runtime::block_on;
+use crate::errors::invalid_argument_error;
+use crate::runtime::{block_on, block_on_result};
 use crate::utils::get_optional;
 
 /// Ruby wrapper for SlateDB Admin.
@@ -25,16 +25,13 @@ impl Admin {
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
     pub fn new(path: String, url: Option<String>) -> Result<Self, Error> {
-        let admin = block_on(async {
-            let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
-                slatedb::Db::resolve_object_store(url).map_err(map_error)?
-            } else {
-                Arc::new(object_store::memory::InMemory::new())
-            };
+        let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
+            block_on_result(async { slatedb::Db::resolve_object_store(url) })?
+        } else {
+            Arc::new(object_store::memory::InMemory::new())
+        };
 
-            Ok::<_, Error>(AdminBuilder::new(path, object_store).build())
-        })?;
-
+        let admin = AdminBuilder::new(path, object_store).build();
         Ok(Self { inner: admin })
     }
 
@@ -103,8 +100,8 @@ impl Admin {
             name,
         };
 
-        let result = block_on(async { self.inner.create_detached_checkpoint(&options).await })
-            .map_err(map_error)?;
+        let result =
+            block_on_result(async { self.inner.create_detached_checkpoint(&options).await })?;
 
         let ruby = Ruby::get().expect("Ruby runtime not available");
         let hash = ruby.hash_new();
@@ -158,12 +155,11 @@ impl Admin {
 
         let lifetime_duration = lifetime.map(std::time::Duration::from_millis);
 
-        block_on(async {
+        block_on_result(async {
             self.inner
                 .refresh_checkpoint(checkpoint_uuid, lifetime_duration)
                 .await
-        })
-        .map_err(map_error)?;
+        })?;
 
         Ok(())
     }
@@ -176,9 +172,7 @@ impl Admin {
         let checkpoint_uuid = uuid::Uuid::parse_str(&id)
             .map_err(|e| invalid_argument_error(&format!("invalid checkpoint UUID: {}", e)))?;
 
-        block_on(async { self.inner.delete_checkpoint(checkpoint_uuid).await })
-            .map_err(map_error)?;
-
+        block_on_result(async { self.inner.delete_checkpoint(checkpoint_uuid).await })?;
         Ok(())
     }
 
