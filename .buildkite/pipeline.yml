@@ -1,20 +1,38 @@
 steps:
   - group: ":ruby: Build & Test"
     steps:
-      - label: ":ruby: Ruby {{matrix.ruby}}"
+      # TODO: when we add support for matrix in the image attribute
+      # convert to matrix build
+      - label: ":ruby: Ruby 3.2"
         command:
           - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           - source ~/.cargo/env
           - bundle install
           - bundle exec rake compile
           - bundle exec rake spec
-        image: "ruby:{{matrix.ruby}}"
-        matrix:
-          setup:
-            ruby:
-              - "3.2"
-              - "3.3"
-              - "3.4"
+        image: "ruby:3.2"
+        env:
+          BUNDLE_PATH: vendor/bundle
+
+      - label: ":ruby: Ruby 3.3"
+        command:
+          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          - source ~/.cargo/env
+          - bundle install
+          - bundle exec rake compile
+          - bundle exec rake spec
+        image: "ruby:3.3"
+        env:
+          BUNDLE_PATH: vendor/bundle
+
+      - label: ":ruby: Ruby 3.4"
+        command:
+          - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          - source ~/.cargo/env
+          - bundle install
+          - bundle exec rake compile
+          - bundle exec rake spec
+        image: "ruby:3.4"
         env:
           BUNDLE_PATH: vendor/bundle
 
