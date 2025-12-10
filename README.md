@@ -2,7 +2,7 @@
 
 Ruby bindings for [SlateDB](https://slatedb.io), a cloud-native embedded key-value store built on object storage.
 
-[![Build status](https://badge.buildkite.com/a7ae51f3a0bc7809cf66981641ec47b3c70db8cf349a5e462f.svg)](https://buildkite.com/catkins-test/slatedb-rb)
+[![Build status](https://badge.buildkite.com/a7ae51f3a0bc7809cf66981641ec47b3c70db8cf349a5e462f.svg)](https://buildkite.com/catkins-test/slatedb-rb) [![Gem Version](https://badge.fury.io/rb/slatedb.svg)](https://badge.fury.io/rb/slatedb)
 
 ## Thread Safety
 
