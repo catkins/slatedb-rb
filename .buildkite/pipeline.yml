@@ -5,6 +5,7 @@ steps:
       # convert to matrix build
       - label: ":ruby: Ruby 3.2"
         command:
+          - apt-get update && apt-get install -y libclang-dev
           - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           - source ~/.cargo/env
           - bundle install
@@ -16,6 +17,7 @@ steps:
 
       - label: ":ruby: Ruby 3.3"
         command:
+          - apt-get update && apt-get install -y libclang-dev
           - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           - source ~/.cargo/env
           - bundle install
@@ -27,6 +29,7 @@ steps:
 
       - label: ":ruby: Ruby 3.4"
         command:
+          - apt-get update && apt-get install -y libclang-dev
           - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           - source ~/.cargo/env
           - bundle install
@@ -43,3 +46,10 @@ steps:
     image: "ruby:3.4"
     env:
       BUNDLE_PATH: vendor/bundle
+
+  - label: ":rust: Cargo Check & Clippy"
+    command:
+      - cd ext/slatedb
+      - cargo check --all-targets
+      - cargo clippy --all-targets -- -D warnings
+    image: "rust:latest"
