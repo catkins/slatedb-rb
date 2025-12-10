@@ -5,6 +5,9 @@ use magnus::{method, Error, Ruby};
 use slatedb::DbIterator;
 use tokio::sync::Mutex;
 
+/// Result type for raw byte key-value pairs.
+type ByteKvResult = Result<Option<(Vec<u8>, Vec<u8>)>, Error>;
+
 use crate::errors::{internal_error, invalid_argument_error, map_error};
 use crate::runtime::block_on;
 
@@ -51,7 +54,7 @@ impl Iterator {
     /// Get the next key-value pair as raw bytes.
     ///
     /// Returns [key, value] as byte arrays, or nil if iteration is complete.
-    pub fn next_entry_bytes(&self) -> Result<Option<(Vec<u8>, Vec<u8>)>, Error> {
+    pub fn next_entry_bytes(&self) -> ByteKvResult {
         let inner = self.inner.clone();
 
         let result = block_on(async {
