@@ -9,6 +9,7 @@ module SlateDb
       #
       # @param path [String] The path identifier for the database
       # @param url [String, nil] Optional object store URL (e.g., "s3://bucket/path")
+      # @param merge_operator [Symbol, String, nil] Optional merge operator ("string_concat" or "concat")
       # @yield [db] If a block is given, yields the database and ensures it's closed
       # @return [Database] The opened database (or block result if block given)
       #
@@ -25,8 +26,11 @@ module SlateDb
       # @example Open with S3 backend
       #   db = SlateDb::Database.open("/tmp/mydb", url: "s3://mybucket/path")
       #
-      def open(path, url: nil)
-        db = _open(path, url)
+      def open(path, url: nil, merge_operator: nil)
+        opts = {}
+        opts[:merge_operator] = merge_operator.to_s if merge_operator
+
+        db = _open(path, url, opts)
 
         if block_given?
           begin
@@ -192,6 +196,31 @@ module SlateDb
         _write(batch)
       else
         _write_with_options(batch, { await_durable: await_durable })
+      end
+    end
+
+    # Merge a value into the database.
+    #
+    # @param key [String] The key to merge into
+    # @param value [String] The merge operand to apply
+    # @param ttl [Integer, nil] Time-to-live in milliseconds
+    # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @return [void]
+    #
+    # @example Merge with string concatenation operator
+    #   db = SlateDb::Database.open("/tmp/mydb", merge_operator: :string_concat)
+    #   db.merge("key", "part1")
+    #   db.merge("key", "part2")
+    #
+    def merge(key, value, ttl: nil, await_durable: nil)
+      opts = {}
+      opts[:ttl] = ttl if ttl
+      opts[:await_durable] = await_durable unless await_durable.nil?
+
+      if opts.empty?
+        _merge(key, value)
+      else
+        _merge_with_options(key, value, opts)
       end
     end
 

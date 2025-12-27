@@ -2,12 +2,15 @@ use std::sync::Arc;
 
 use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
-use slatedb::config::{DurabilityLevel, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions};
+use slatedb::config::{
+    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
+};
 use slatedb::object_store::memory::InMemory;
 use slatedb::{Db, IsolationLevel};
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
+use crate::merge_ops::parse_merge_operator;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
@@ -28,18 +31,26 @@ impl Database {
     /// # Arguments
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL (e.g., "s3://bucket/path")
+    /// * `kwargs` - Additional options (merge_operator)
     ///
     /// # Returns
     /// A new Database instance
-    pub fn open(path: String, url: Option<String>) -> Result<Self, Error> {
+    pub fn open(path: String, url: Option<String>, kwargs: RHash) -> Result<Self, Error> {
+        let merge_operator = parse_merge_operator(&kwargs)?;
         let db = block_on_result(async {
-            let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url_str) = url {
-                resolve_object_store(url_str)?
-            } else {
-                Arc::new(InMemory::new())
-            };
+            let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
+                if let Some(ref url_str) = url {
+                    resolve_object_store(url_str)?
+                } else {
+                    Arc::new(InMemory::new())
+                };
 
-            Db::builder(path, object_store).build().await
+            let mut builder = Db::builder(path, object_store);
+            if let Some(merge_operator) = merge_operator {
+                builder = builder.with_merge_operator(merge_operator);
+            }
+
+            builder.build().await
         })?;
 
         Ok(Self {
@@ -355,6 +366,62 @@ impl Database {
         Ok(())
     }
 
+    /// Merge a value into the database.
+    ///
+    /// # Arguments
+    /// * `key` - The key to merge into
+    /// * `value` - The merge operand to apply
+    pub fn merge(&self, key: String, value: String) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let merge_opts = MergeOptions { ttl: Ttl::Default };
+
+        let write_opts = WriteOptions {
+            await_durable: true,
+        };
+
+        block_on_result(async {
+            self.inner
+                .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
+                .await
+        })?;
+
+        Ok(())
+    }
+
+    /// Merge a value into the database with options.
+    ///
+    /// # Arguments
+    /// * `key` - The key to merge into
+    /// * `value` - The merge operand to apply
+    /// * `kwargs` - Keyword arguments (ttl, await_durable)
+    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let ttl = get_optional::<u64>(&kwargs, "ttl")?;
+        let merge_opts = MergeOptions {
+            ttl: match ttl {
+                Some(ms) => Ttl::ExpireAfter(ms),
+                None => Ttl::Default,
+            },
+        };
+
+        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
+        let write_opts = WriteOptions { await_durable };
+
+        block_on_result(async {
+            self.inner
+                .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
+                .await
+        })?;
+
+        Ok(())
+    }
+
     /// Begin a new transaction.
     ///
     /// # Arguments
@@ -407,7 +474,7 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
     let class = module.define_class("Database", ruby.class_object())?;
 
     // Class methods
-    class.define_singleton_method("_open", function!(Database::open, 2))?;
+    class.define_singleton_method("_open", function!(Database::open, 3))?;
 
     // Instance methods - simple versions
     class.define_method("_get", method!(Database::get, 1))?;
@@ -429,6 +496,11 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
     class.define_method(
         "_write_with_options",
         method!(Database::write_with_options, 2),
+    )?;
+    class.define_method("_merge", method!(Database::merge, 2))?;
+    class.define_method(
+        "_merge_with_options",
+        method!(Database::merge_with_options, 3),
     )?;
     class.define_method(
         "_begin_transaction",

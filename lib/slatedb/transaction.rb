@@ -47,6 +47,21 @@ module SlateDb
       _delete(key)
     end
 
+    # Merge a value within the transaction.
+    #
+    # @param key [String] The key to merge into
+    # @param value [String] The merge operand to apply
+    # @param ttl [Integer, nil] Time-to-live in milliseconds
+    # @return [void]
+    #
+    def merge(key, value, ttl: nil)
+      if ttl
+        _merge_with_options(key, value, { ttl: ttl })
+      else
+        _merge(key, value)
+      end
+    end
+
     # Scan a range of keys within the transaction.
     #
     # @param start_key [String] The start key (inclusive)

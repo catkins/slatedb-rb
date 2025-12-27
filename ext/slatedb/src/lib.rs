@@ -20,6 +20,7 @@ mod admin;
 mod database;
 mod errors;
 mod iterator;
+mod merge_ops;
 mod reader;
 mod runtime;
 mod snapshot;
