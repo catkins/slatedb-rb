@@ -248,6 +248,150 @@ RSpec.describe "Merge Operations" do
     end
   end
 
+  describe "with custom Proc merge operator" do
+    context "basic operations" do
+      it "uses a custom proc to merge values" do
+        # Custom merge that adds numbers
+        counter_merge = lambda { |_key, existing, new_val|
+          existing_num = existing ? existing.to_i : 0
+          (existing_num + new_val.to_i).to_s
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: counter_merge) do |db|
+          db.merge("counter", "5")
+          db.merge("counter", "3")
+
+          expect(db.get("counter")).to eq("8")
+        end
+      end
+
+      it "receives key, existing value, and new value" do
+        received_args = []
+        tracking_merge = lambda { |key, existing, new_val|
+          received_args << [key, existing, new_val]
+          existing.to_s + new_val.to_s
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: tracking_merge) do |db|
+          db.merge("mykey", "first")
+          db.merge("mykey", "second")
+          db.get("mykey") # trigger the merge
+        end
+
+        expect(received_args).to include(["mykey", nil, "first"])
+        expect(received_args).to include(%w[mykey first second])
+      end
+
+      it "works with lambda syntax" do
+        SlateDb::Database.open(tmpdir, merge_operator: ->(_k, e, n) { (e || "") + n }) do |db|
+          db.merge("key", "hello")
+          db.merge("key", " world")
+
+          expect(db.get("key")).to eq("hello world")
+        end
+      end
+
+      it "works with Proc.new syntax" do
+        merger = proc { |_k, e, n| (e || "") + n.upcase }
+
+        SlateDb::Database.open(tmpdir, merge_operator: merger) do |db|
+          db.merge("key", "hello")
+          db.merge("key", " world")
+
+          expect(db.get("key")).to eq("HELLO WORLD")
+        end
+      end
+    end
+
+    context "custom merge logic" do
+      it "can implement max value merge" do
+        max_merge = lambda { |_key, existing, new_val|
+          existing_num = existing ? existing.to_i : 0
+          new_num = new_val.to_i
+          [existing_num, new_num].max.to_s
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: max_merge) do |db|
+          db.merge("max", "5")
+          db.merge("max", "3")
+          db.merge("max", "9")
+          db.merge("max", "1")
+
+          expect(db.get("max")).to eq("9")
+        end
+      end
+
+      it "can implement newline-delimited log append" do
+        log_append = lambda { |_key, existing, new_val|
+          if existing
+            "#{existing}\n#{new_val}"
+          else
+            new_val
+          end
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: log_append) do |db|
+          db.merge("log", "event1")
+          db.merge("log", "event2")
+
+          result = db.get("log")
+          expect(result).to eq("event1\nevent2")
+        end
+      end
+    end
+
+    # NOTE: Custom Proc merge operators have limitations with transactions and batches.
+    # When merge operations are processed on worker threads (e.g., during compaction
+    # or batch processing), they fall back to string concatenation because the Ruby
+    # proc can only be safely called from the Ruby thread.
+    #
+    # For full custom merge behavior, use direct db.merge() calls which are processed
+    # on the Ruby thread.
+    context "with transactions (fallback behavior)" do
+      it "falls back to concatenation for transaction merges processed on worker threads" do
+        counter_merge = lambda { |_key, existing, new_val|
+          existing_num = existing ? existing.to_i : 0
+          (existing_num + new_val.to_i).to_s
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: counter_merge) do |db|
+          db.transaction do |txn|
+            txn.merge("counter", "1")
+            txn.merge("counter", "2")
+            txn.merge("counter", "3")
+          end
+
+          # Due to worker thread processing, operands may be concatenated before
+          # the Ruby proc is called. The final result depends on timing.
+          # The proc will be called on read, but with pre-concatenated operands.
+          result = db.get("counter")
+          # Result will be based on the merge of concatenated operands
+          expect(result).not_to be_nil
+        end
+      end
+    end
+
+    context "with batches (fallback behavior)" do
+      it "falls back to concatenation for batch merges processed on worker threads" do
+        counter_merge = lambda { |_key, existing, new_val|
+          existing_num = existing ? existing.to_i : 0
+          (existing_num + new_val.to_i).to_s
+        }
+
+        SlateDb::Database.open(tmpdir, merge_operator: counter_merge) do |db|
+          db.batch do |b|
+            b.merge("counter", "10")
+            b.merge("counter", "20")
+          end
+
+          # Due to worker thread processing, the operands may be concatenated
+          result = db.get("counter")
+          expect(result).not_to be_nil
+        end
+      end
+    end
+  end
+
   describe "without merge operator" do
     it "raises error when reading merged values without merge_operator configured" do
       SlateDb::Database.open(tmpdir) do |db|

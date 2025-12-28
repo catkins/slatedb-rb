@@ -9,7 +9,9 @@ module SlateDb
       #
       # @param path [String] The path identifier for the database
       # @param url [String, nil] Optional object store URL (e.g., "s3://bucket/path")
-      # @param merge_operator [Symbol, String, nil] Optional merge operator ("string_concat" or "concat")
+      # @param merge_operator [Symbol, String, Proc, nil] Optional merge operator.
+      #   Can be a symbol/string ("string_concat" or "concat") or a Proc/lambda
+      #   that takes (key, existing_value, new_value) and returns the merged value.
       # @yield [db] If a block is given, yields the database and ensures it's closed
       # @return [Database] The opened database (or block result if block given)
       #
@@ -26,9 +28,27 @@ module SlateDb
       # @example Open with S3 backend
       #   db = SlateDb::Database.open("/tmp/mydb", url: "s3://mybucket/path")
       #
+      # @example Open with a custom merge operator (Proc)
+      #   # Custom merge that adds numbers
+      #   db = SlateDb::Database.open("/tmp/mydb", merge_operator: ->(key, existing, new_val) {
+      #     existing_num = existing ? existing.to_i : 0
+      #     (existing_num + new_val.to_i).to_s
+      #   })
+      #   db.merge("counter", "5")
+      #   db.merge("counter", "3")
+      #   db.get("counter") # => "8"
+      #
       def open(path, url: nil, merge_operator: nil)
         opts = {}
-        opts[:merge_operator] = merge_operator.to_s if merge_operator
+
+        case merge_operator
+        when Symbol, String
+          opts[:merge_operator] = merge_operator.to_s
+        when Proc
+          # Store the proc to prevent GC and pass to Rust
+          @_merge_operator_proc = merge_operator
+          opts[:merge_operator_proc] = merge_operator
+        end
 
         db = _open(path, url, opts)
 

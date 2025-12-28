@@ -10,7 +10,7 @@ use slatedb::{Db, IsolationLevel};
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
-use crate::merge_ops::parse_merge_operator;
+use crate::merge_ops::{parse_merge_operator, parse_merge_operator_proc};
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
@@ -31,12 +31,15 @@ impl Database {
     /// # Arguments
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL (e.g., "s3://bucket/path")
-    /// * `kwargs` - Additional options (merge_operator)
+    /// * `kwargs` - Additional options (merge_operator, merge_operator_proc)
     ///
     /// # Returns
     /// A new Database instance
     pub fn open(path: String, url: Option<String>, kwargs: RHash) -> Result<Self, Error> {
-        let merge_operator = parse_merge_operator(&kwargs)?;
+        // Try string-based merge operator first, then proc-based
+        let merge_operator = parse_merge_operator(&kwargs)?
+            .or(parse_merge_operator_proc(&kwargs)?);
+
         let db = block_on_result(async {
             let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
                 if let Some(ref url_str) = url {
