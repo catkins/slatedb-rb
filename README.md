@@ -181,6 +181,41 @@ users = db.scan("user:").select { |k, v| v.include?("active") }
 all_entries = db.scan("").to_a
 ```
 
+### Merge Operations
+
+Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:
+
+```ruby
+# Open with a merge operator
+SlateDb::Database.open("/tmp/mydb", merge_operator: :string_concat) do |db|
+  # Merge appends to existing values (or creates if key doesn't exist)
+  db.merge("log", "line1\n")
+  db.merge("log", "line2\n")
+  db.merge("log", "line3\n")
+
+  db.get("log")  # => "line1\nline2\nline3\n"
+end
+
+# Merge with options
+db.merge("key", "value", ttl: 60_000, await_durable: false)
+
+# Works in transactions
+db.transaction do |txn|
+  txn.merge("counter", "1")
+  txn.merge("counter", "1")
+end
+
+# Works in batches
+db.batch do |b|
+  b.merge("key", "a")
+   .merge("key", "b")
+   .merge("key", "c")
+end
+```
+
+Available merge operators:
+- `:string_concat` (or `:concat`) - Concatenates byte values
+
 ### Write Batches
 
 Perform multiple writes atomically:
