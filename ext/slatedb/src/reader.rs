@@ -7,6 +7,7 @@ use slatedb::DbReader;
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
+use crate::merge_ops::parse_merge_operator;
 use crate::runtime::block_on_result;
 use crate::utils::{get_optional, resolve_object_store};
 
@@ -26,7 +27,7 @@ impl Reader {
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
     /// * `checkpoint_id` - Optional checkpoint UUID to read at
-    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime, max_memtable_bytes)
+    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime, max_memtable_bytes, merge_operator)
     pub fn open(
         path: String,
         url: Option<String>,
@@ -39,6 +40,7 @@ impl Reader {
         let checkpoint_lifetime = get_optional::<u64>(&kwargs, "checkpoint_lifetime")?
             .map(std::time::Duration::from_millis);
         let max_memtable_bytes = get_optional::<u64>(&kwargs, "max_memtable_bytes")?;
+        let merge_operator = parse_merge_operator(&kwargs)?;
 
         // Parse checkpoint_id as UUID
         let checkpoint_uuid =
@@ -51,10 +53,10 @@ impl Reader {
             };
 
         let reader = block_on_result(async {
-            let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
+            let object_store: Arc<dyn slatedb::object_store::ObjectStore> = if let Some(ref url) = url {
                 resolve_object_store(url)?
             } else {
-                Arc::new(object_store::memory::InMemory::new())
+                Arc::new(slatedb::object_store::memory::InMemory::new())
             };
 
             let mut options = DbReaderOptions::default();
@@ -66,6 +68,9 @@ impl Reader {
             }
             if let Some(max_bytes) = max_memtable_bytes {
                 options.max_memtable_bytes = max_bytes;
+            }
+            if let Some(merge_operator) = merge_operator {
+                options.merge_operator = Some(merge_operator);
             }
 
             DbReader::open(path, object_store, checkpoint_uuid, options).await

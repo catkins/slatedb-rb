@@ -181,6 +181,82 @@ users = db.scan("user:").select { |k, v| v.include?("active") }
 all_entries = db.scan("").to_a
 ```
 
+### Merge Operations
+
+Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:
+
+```ruby
+# Open with a built-in merge operator
+SlateDb::Database.open("/tmp/mydb", merge_operator: :string_concat) do |db|
+  # Merge appends to existing values (or creates if key doesn't exist)
+  db.merge("log", "line1\n")
+  db.merge("log", "line2\n")
+  db.merge("log", "line3\n")
+
+  db.get("log")  # => "line1\nline2\nline3\n"
+end
+
+# Merge with options
+db.merge("key", "value", ttl: 60_000, await_durable: false)
+
+# Works in transactions and batches
+db.transaction do |txn|
+  txn.merge("counter", "1")
+end
+
+db.batch do |b|
+  b.merge("key", "a")
+   .merge("key", "b")
+end
+```
+
+#### Custom Merge Operators
+
+You can provide a Ruby Proc/lambda as a custom merge operator:
+
+```ruby
+# Counter merge operator (adds numbers)
+counter_merge = ->(key, existing, new_value) {
+  existing_num = existing ? existing.to_i : 0
+  (existing_num + new_value.to_i).to_s
+}
+
+SlateDb::Database.open("/tmp/mydb", merge_operator: counter_merge) do |db|
+  db.merge("visits", "1")
+  db.merge("visits", "1")
+  db.merge("visits", "1")
+
+  db.get("visits")  # => "3"
+end
+
+# Max value merge operator
+max_merge = ->(key, existing, new_value) {
+  existing_num = existing ? existing.to_i : 0
+  new_num = new_value.to_i
+  [existing_num, new_num].max.to_s
+}
+
+SlateDb::Database.open("/tmp/mydb", merge_operator: max_merge) do |db|
+  db.merge("high_score", "100")
+  db.merge("high_score", "250")
+  db.merge("high_score", "150")
+
+  db.get("high_score")  # => "250"
+end
+```
+
+The proc receives three arguments:
+- `key` - The key being merged
+- `existing` - The existing value (nil if no value exists)
+- `new_value` - The new merge operand
+
+**Note:** Custom Proc merge operators work best with direct `db.merge()` calls. When used with transactions or batches, some merge operations may be processed on background threads and fall back to string concatenation.
+
+#### Available Merge Operators
+
+- `:string_concat` (or `:concat`) - Concatenates byte values (built-in)
+- Any `Proc` or `lambda` - Custom merge logic
+
 ### Write Batches
 
 Perform multiple writes atomically:

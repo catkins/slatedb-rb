@@ -1,6 +1,6 @@
 use magnus::Error;
 use once_cell::sync::OnceCell;
-use rb_sys::rb_thread_call_without_gvl;
+use rb_sys::{rb_thread_call_with_gvl, rb_thread_call_without_gvl};
 use slatedb::Error as SlateError;
 use std::ffi::c_void;
 use std::future::Future;
@@ -93,6 +93,57 @@ where
             &mut closure as *mut _ as *mut c_void,
             None,
             std::ptr::null_mut(),
+        );
+    }
+
+    closure.result.expect("closure did not run")
+}
+
+/// Execute a closure while holding the Ruby GVL.
+///
+/// This is the inverse of `without_gvl`. Use this when you need to call back
+/// into Ruby from code that has previously released the GVL (e.g., inside
+/// a future being executed by `block_on`).
+///
+/// # Safety
+///
+/// This function can ONLY be called from a Ruby thread that has previously
+/// released the GVL via `without_gvl` or `rb_thread_call_without_gvl`.
+/// Calling it from a non-Ruby thread (like a spawned Tokio task) will cause
+/// a Ruby fatal error.
+///
+/// # Panics
+///
+/// Panics if called from a non-Ruby thread.
+pub fn with_gvl<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    struct Closure<F, T> {
+        f: Option<F>,
+        result: Option<T>,
+    }
+
+    extern "C" fn call_closure<F, T>(data: *mut c_void) -> *mut c_void
+    where
+        F: FnOnce() -> T,
+    {
+        let closure = unsafe { &mut *(data as *mut Closure<F, T>) };
+        if let Some(f) = closure.f.take() {
+            closure.result = Some(f());
+        }
+        std::ptr::null_mut()
+    }
+
+    let mut closure = Closure {
+        f: Some(f),
+        result: None,
+    };
+
+    unsafe {
+        rb_thread_call_with_gvl(
+            Some(call_closure::<F, T>),
+            &mut closure as *mut _ as *mut c_void,
         );
     }
 

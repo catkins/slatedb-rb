@@ -2,7 +2,9 @@ use std::cell::RefCell;
 
 use magnus::prelude::*;
 use magnus::{method, Error, RHash, Ruby};
-use slatedb::config::{DurabilityLevel, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions};
+use slatedb::config::{
+    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
+};
 use slatedb::DBTransaction;
 
 use crate::errors::{closed_error, invalid_argument_error, map_error};
@@ -131,6 +133,48 @@ impl Transaction {
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
         txn.delete(key.as_bytes()).map_err(map_error)?;
+
+        Ok(())
+    }
+
+    /// Merge a value within the transaction.
+    pub fn merge(&self, key: String, value: String) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let guard = self.inner.borrow();
+        let txn = guard
+            .as_ref()
+            .ok_or_else(|| closed_error("transaction is closed"))?;
+
+        txn.merge(key.as_bytes(), value.as_bytes())
+            .map_err(map_error)?;
+
+        Ok(())
+    }
+
+    /// Merge a value with options within the transaction.
+    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let ttl = get_optional::<u64>(&kwargs, "ttl")?;
+        let merge_opts = MergeOptions {
+            ttl: match ttl {
+                Some(ms) => Ttl::ExpireAfter(ms),
+                None => Ttl::Default,
+            },
+        };
+
+        let guard = self.inner.borrow();
+        let txn = guard
+            .as_ref()
+            .ok_or_else(|| closed_error("transaction is closed"))?;
+
+        txn.merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts)
+            .map_err(map_error)?;
 
         Ok(())
     }
@@ -275,6 +319,11 @@ pub fn define_transaction_class(ruby: &Ruby, module: &magnus::RModule) -> Result
         method!(Transaction::put_with_options, 3),
     )?;
     class.define_method("_delete", method!(Transaction::delete, 1))?;
+    class.define_method("_merge", method!(Transaction::merge, 2))?;
+    class.define_method(
+        "_merge_with_options",
+        method!(Transaction::merge_with_options, 3),
+    )?;
     class.define_method("_scan", method!(Transaction::scan, 2))?;
     class.define_method(
         "_scan_with_options",

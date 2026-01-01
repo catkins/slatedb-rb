@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
-use slatedb::config::{PutOptions, Ttl};
+use slatedb::config::{MergeOptions, PutOptions, Ttl};
 use slatedb::WriteBatch as SlateWriteBatch;
 
 use crate::errors::invalid_argument_error;
@@ -72,6 +72,43 @@ impl WriteBatch {
         Ok(())
     }
 
+    /// Add a merge operation to the batch.
+    pub fn merge(&self, key: String, value: String) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        self.inner
+            .borrow_mut()
+            .merge(key.as_bytes(), value.as_bytes());
+
+        Ok(())
+    }
+
+    /// Add a merge operation with options to the batch.
+    ///
+    /// Options:
+    /// - ttl: Time-to-live in milliseconds
+    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let ttl = get_optional::<u64>(&kwargs, "ttl")?;
+        let merge_opts = MergeOptions {
+            ttl: match ttl {
+                Some(ms) => Ttl::ExpireAfter(ms),
+                None => Ttl::Default,
+            },
+        };
+
+        self.inner
+            .borrow_mut()
+            .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts);
+
+        Ok(())
+    }
+
     /// Take ownership of the inner WriteBatch (consumes it).
     /// Used internally when writing the batch to the database.
     pub fn take(&self) -> Result<SlateWriteBatch, Error> {
@@ -93,6 +130,11 @@ pub fn define_write_batch_class(ruby: &Ruby, module: &magnus::RModule) -> Result
         method!(WriteBatch::put_with_options, 3),
     )?;
     class.define_method("_delete", method!(WriteBatch::delete, 1))?;
+    class.define_method("_merge", method!(WriteBatch::merge, 2))?;
+    class.define_method(
+        "_merge_with_options",
+        method!(WriteBatch::merge_with_options, 3),
+    )?;
 
     Ok(())
 }

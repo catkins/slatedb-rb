@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use magnus::value::ReprValue;
 use magnus::{Error, RHash, Ruby, TryConvert};
-use object_store::aws::AmazonS3Builder;
-use object_store::ObjectStoreScheme;
+use slatedb::object_store::aws::AmazonS3Builder;
+use slatedb::object_store::{Error as ObjectStoreError, ObjectStore, ObjectStoreScheme};
 use slatedb::{Db, Error as SlateError};
 use url::Url;
 
@@ -24,7 +24,7 @@ pub fn get_optional<T: TryConvert>(hash: &RHash, key: &str) -> Result<Option<T>,
 }
 
 /// Convert an object_store error to a SlateDB error
-fn to_slate_error(e: object_store::Error) -> SlateError {
+fn to_slate_error(e: ObjectStoreError) -> SlateError {
     SlateError::unavailable(e.to_string())
 }
 
@@ -33,7 +33,7 @@ fn to_slate_error(e: object_store::Error) -> SlateError {
 /// This function handles S3 URLs specially to ensure environment variables
 /// like AWS_ACCESS_KEY_ID are properly recognized (the default object_store
 /// registry only recognizes lowercase variants like aws_access_key_id).
-pub fn resolve_object_store(url: &str) -> Result<Arc<dyn object_store::ObjectStore>, SlateError> {
+pub fn resolve_object_store(url: &str) -> Result<Arc<dyn ObjectStore>, SlateError> {
     let parsed_url: Url = url
         .try_into()
         .map_err(|e: url::ParseError| SlateError::invalid(format!("invalid URL: {}", e)))?;

@@ -25,10 +25,10 @@ impl Admin {
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
     pub fn new(path: String, url: Option<String>) -> Result<Self, Error> {
-        let object_store: Arc<dyn object_store::ObjectStore> = if let Some(ref url) = url {
+        let object_store: Arc<dyn slatedb::object_store::ObjectStore> = if let Some(ref url) = url {
             block_on_result(async { resolve_object_store(url) })?
         } else {
-            Arc::new(object_store::memory::InMemory::new())
+            Arc::new(slatedb::object_store::memory::InMemory::new())
         };
 
         let admin = AdminBuilder::new(path, object_store).build();
