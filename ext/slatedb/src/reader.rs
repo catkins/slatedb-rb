@@ -205,6 +205,67 @@ impl Reader {
         Ok(Iterator::new(iter))
     }
 
+    /// Scan all keys with a given prefix.
+    pub fn scan_prefix(&self, prefix: String) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let iter = block_on_result(async { self.inner.scan_prefix(prefix.as_bytes()).await })?;
+
+        Ok(Iterator::new(iter))
+    }
+
+    /// Scan all keys with a given prefix with options.
+    pub fn scan_prefix_with_options(
+        &self,
+        prefix: String,
+        kwargs: RHash,
+    ) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let mut opts = ScanOptions::default();
+
+        if let Some(df) = get_optional::<String>(&kwargs, "durability_filter")? {
+            opts.durability_filter = match df.as_str() {
+                "remote" => DurabilityLevel::Remote,
+                "memory" => DurabilityLevel::Memory,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid durability_filter: {} (expected 'remote' or 'memory')",
+                        other
+                    )))
+                }
+            };
+        }
+
+        if let Some(dirty) = get_optional::<bool>(&kwargs, "dirty")? {
+            opts.dirty = dirty;
+        }
+
+        if let Some(rab) = get_optional::<usize>(&kwargs, "read_ahead_bytes")? {
+            opts.read_ahead_bytes = rab;
+        }
+
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
+        if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
+            opts.max_fetch_tasks = mft;
+        }
+
+        let iter = block_on_result(async {
+            self.inner
+                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .await
+        })?;
+
+        Ok(Iterator::new(iter))
+    }
+
     /// Close the reader.
     pub fn close(&self) -> Result<(), Error> {
         block_on_result(async { self.inner.close().await })?;
@@ -225,6 +286,11 @@ pub fn define_reader_class(ruby: &Ruby, module: &magnus::RModule) -> Result<(), 
     class.define_method("get_bytes", method!(Reader::get_bytes, 1))?;
     class.define_method("_scan", method!(Reader::scan, 2))?;
     class.define_method("_scan_with_options", method!(Reader::scan_with_options, 3))?;
+    class.define_method("_scan_prefix", method!(Reader::scan_prefix, 1))?;
+    class.define_method(
+        "_scan_prefix_with_options",
+        method!(Reader::scan_prefix_with_options, 2),
+    )?;
     class.define_method("close", method!(Reader::close, 0))?;
 
     Ok(())

@@ -181,6 +181,29 @@ users = db.scan("user:").select { |k, v| v.include?("active") }
 all_entries = db.scan("").to_a
 ```
 
+#### Prefix Scanning
+
+Scan all keys with a given prefix using `scan_prefix`:
+
+```ruby
+# Scan all keys starting with "user:"
+db.scan_prefix("user:").each do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Block form
+db.scan_prefix("order:") do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Works with transactions, snapshots, and readers too
+db.transaction do |txn|
+  txn.scan_prefix("item:").each do |k, v|
+    puts "#{k}: #{v}"
+  end
+end
+```
+
 ### Merge Operations
 
 Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:
@@ -307,18 +330,60 @@ Transaction operations:
 db.transaction do |txn|
   # Read
   value = txn.get("key")
-  
+
   # Write
   txn.put("key", "value")
   txn.put("expiring", "data", ttl: 30_000)
-  
+
   # Delete
   txn.delete("old_key")
-  
+
   # Scan
   txn.scan("prefix:").each do |k, v|
     puts "#{k}: #{v}"
   end
+
+  # Scan with prefix
+  txn.scan_prefix("user:").each do |k, v|
+    puts "#{k}: #{v}"
+  end
+end
+```
+
+#### Explicit Read Tracking
+
+In serializable transactions, use `mark_read` to explicitly track keys for conflict detection without actually reading them:
+
+```ruby
+db.transaction(isolation: :serializable) do |txn|
+  # Mark keys as read for conflict detection
+  txn.mark_read(["key1", "key2", "key3"])
+
+  # Now if another transaction modifies key1/key2/key3,
+  # this transaction will fail on commit
+  txn.put("result", "computed_value")
+end
+```
+
+### Checkpoints
+
+Create durable checkpoints for backup or read replica purposes:
+
+```ruby
+SlateDb::Database.open("/tmp/mydb", url: "file:///tmp/mydb") do |db|
+  db.put("key", "value")
+  db.flush
+
+  # Create a checkpoint
+  checkpoint = db.create_checkpoint
+  puts "Checkpoint ID: #{checkpoint[:id]}"
+  puts "Manifest ID: #{checkpoint[:manifest_id]}"
+
+  # Create a named checkpoint with lifetime
+  checkpoint = db.create_checkpoint(
+    name: "before-migration",
+    lifetime: 3_600_000  # 1 hour in milliseconds
+  )
 end
 ```
 

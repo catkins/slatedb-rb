@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module SlateDb
-  class Database
+  class Database # rubocop:disable Metrics/ClassLength
     private_class_method :new
 
     class << self
@@ -192,6 +192,43 @@ module SlateDb
       end
     end
 
+    # Scan all keys with a given prefix.
+    #
+    # @param prefix [String] The key prefix to scan
+    # @param durability_filter [String, nil] Filter by durability level ("remote" or "memory")
+    # @param dirty [Boolean, nil] Whether to include uncommitted data
+    # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
+    # @param cache_blocks [Boolean, nil] Whether to cache blocks
+    # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
+    # @return [Iterator] An iterator over key-value pairs
+    #
+    # @example Scan all user keys
+    #   db.scan_prefix("user:") do |key, value|
+    #     puts "#{key}: #{value}"
+    #   end
+    #
+    def scan_prefix(prefix, durability_filter: nil, dirty: nil,
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
+      opts = {}
+      opts[:durability_filter] = durability_filter.to_s if durability_filter
+      opts[:dirty] = dirty unless dirty.nil?
+      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
+      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+
+      iter = if opts.empty?
+               _scan_prefix(prefix)
+             else
+               _scan_prefix_with_options(prefix, opts)
+             end
+
+      if block_given?
+        iter.each(&)
+      else
+        iter
+      end
+    end
+
     # Write a batch of operations atomically.
     #
     # @param batch [WriteBatch] The batch to write
@@ -356,6 +393,26 @@ module SlateDb
       else
         snap
       end
+    end
+
+    # Create a checkpoint of the database.
+    #
+    # @param lifetime [Integer, nil] Checkpoint lifetime in milliseconds
+    # @param name [String, nil] Optional name for the checkpoint
+    # @return [Hash] Hash with :id (UUID string) and :manifest_id (integer)
+    #
+    # @example Create a named checkpoint
+    #   checkpoint = db.create_checkpoint(name: "before-migration")
+    #   puts "Checkpoint ID: #{checkpoint[:id]}"
+    #
+    # @example Create a checkpoint with lifetime
+    #   checkpoint = db.create_checkpoint(lifetime: 3600_000) # 1 hour
+    #
+    def create_checkpoint(lifetime: nil, name: nil)
+      opts = {}
+      opts[:lifetime] = lifetime if lifetime
+      opts[:name] = name if name
+      _create_checkpoint(opts)
     end
   end
 end

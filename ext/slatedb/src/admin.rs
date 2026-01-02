@@ -235,6 +235,7 @@ impl Admin {
                     min_age,
                     default_opts.compacted_options,
                 ),
+                compactions_options: default_opts.compactions_options,
             }
         };
 

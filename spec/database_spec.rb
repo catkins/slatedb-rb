@@ -161,13 +161,17 @@ RSpec.describe SlateDb::Database do
   end
 
   describe "error handling" do
-    it "raises a Ruby exception (not panic) when opening with invalid S3 URL" do
+    it "raises a Ruby exception (not panic) when opening with invalid URL" do
       # This test verifies that errors during Database.open are properly converted
       # to Ruby exceptions even when the error occurs in async code running without
       # the GVL. Previously this would panic with "Ruby runtime not available: GvlUnlocked"
       # because map_error was called inside block_on (without GVL) instead of after.
+      #
+      # Use an invalid URL scheme which fails fast during URL parsing.
+      # Note: file:// and s3:// URLs may hang if the path doesn't exist due to
+      # SlateDB's internal initialization.
       expect do
-        SlateDb::Database.open("/tmp/test", url: "s3://invalid-bucket-that-does-not-exist/path")
+        SlateDb::Database.open("/tmp/test", url: "invalid://not/a/real/scheme")
       end.to raise_error(SlateDb::Error)
     end
 
