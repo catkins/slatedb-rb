@@ -44,6 +44,7 @@ pub fn resolve_object_store(url: &str) -> Result<Arc<dyn ObjectStore>, SlateErro
     match scheme {
         ObjectStoreScheme::AmazonS3 => {
             // Use from_env() to properly handle uppercase AWS_* environment variables
+            // (the default object_store registry only recognizes lowercase variants)
             let store = AmazonS3Builder::from_env()
                 .with_url(url)
                 .build()

@@ -339,6 +339,85 @@ impl Database {
         Ok(Iterator::new(iter))
     }
 
+    /// Scan all keys with a given prefix.
+    ///
+    /// # Arguments
+    /// * `prefix` - The key prefix to scan
+    ///
+    /// # Returns
+    /// An Iterator over key-value pairs
+    pub fn scan_prefix(&self, prefix: String) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let opts = ScanOptions::default();
+        let iter = block_on_result(async {
+            self.inner
+                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .await
+        })?;
+
+        Ok(Iterator::new(iter))
+    }
+
+    /// Scan all keys with a given prefix with options.
+    ///
+    /// # Arguments
+    /// * `prefix` - The key prefix to scan
+    /// * `kwargs` - Keyword arguments (durability_filter, dirty, read_ahead_bytes, cache_blocks, max_fetch_tasks)
+    ///
+    /// # Returns
+    /// An Iterator over key-value pairs
+    pub fn scan_prefix_with_options(
+        &self,
+        prefix: String,
+        kwargs: RHash,
+    ) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let mut opts = ScanOptions::default();
+
+        if let Some(df) = get_optional::<String>(&kwargs, "durability_filter")? {
+            opts.durability_filter = match df.as_str() {
+                "remote" => DurabilityLevel::Remote,
+                "memory" => DurabilityLevel::Memory,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid durability_filter: {} (expected 'remote' or 'memory')",
+                        other
+                    )))
+                }
+            };
+        }
+
+        if let Some(dirty) = get_optional::<bool>(&kwargs, "dirty")? {
+            opts.dirty = dirty;
+        }
+
+        if let Some(rab) = get_optional::<usize>(&kwargs, "read_ahead_bytes")? {
+            opts.read_ahead_bytes = rab;
+        }
+
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
+        if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
+            opts.max_fetch_tasks = mft;
+        }
+
+        let iter = block_on_result(async {
+            self.inner
+                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .await
+        })?;
+
+        Ok(Iterator::new(iter))
+    }
+
     /// Write a batch of operations atomically.
     ///
     /// # Arguments
@@ -459,6 +538,40 @@ impl Database {
         Ok(Snapshot::new(snap))
     }
 
+    /// Create a checkpoint of the database.
+    ///
+    /// # Arguments
+    /// * `kwargs` - Options: lifetime (ms), name
+    ///
+    /// # Returns
+    /// Hash with id (UUID string) and manifest_id (int)
+    pub fn create_checkpoint(&self, kwargs: RHash) -> Result<RHash, Error> {
+        use slatedb::config::{CheckpointOptions, CheckpointScope};
+
+        let lifetime = get_optional::<u64>(&kwargs, "lifetime")?
+            .map(std::time::Duration::from_millis);
+        let name = get_optional::<String>(&kwargs, "name")?;
+
+        let options = CheckpointOptions {
+            lifetime,
+            source: None,
+            name,
+        };
+
+        let result = block_on_result(async {
+            self.inner
+                .create_checkpoint(CheckpointScope::Durable, &options)
+                .await
+        })?;
+
+        let ruby = Ruby::get().expect("Ruby runtime not available");
+        let hash = ruby.hash_new();
+        hash.aset(ruby.to_symbol("id"), result.id.to_string())?;
+        hash.aset(ruby.to_symbol("manifest_id"), result.manifest_id)?;
+
+        Ok(hash)
+    }
+
     /// Flush the database to ensure durability.
     pub fn flush(&self) -> Result<(), Error> {
         block_on_result(async { self.inner.flush().await })?;
@@ -495,6 +608,11 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         "_scan_with_options",
         method!(Database::scan_with_options, 3),
     )?;
+    class.define_method("_scan_prefix", method!(Database::scan_prefix, 1))?;
+    class.define_method(
+        "_scan_prefix_with_options",
+        method!(Database::scan_prefix_with_options, 2),
+    )?;
     class.define_method("_write", method!(Database::write, 1))?;
     class.define_method(
         "_write_with_options",
@@ -510,6 +628,10 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         method!(Database::begin_transaction, 1),
     )?;
     class.define_method("_snapshot", method!(Database::snapshot, 0))?;
+    class.define_method(
+        "_create_checkpoint",
+        method!(Database::create_checkpoint, 1),
+    )?;
     class.define_method("flush", method!(Database::flush, 0))?;
     class.define_method("close", method!(Database::close, 0))?;
 

@@ -5,7 +5,7 @@ use magnus::{method, Error, RHash, Ruby};
 use slatedb::config::{
     DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
 };
-use slatedb::DBTransaction;
+use slatedb::DbTransaction;
 
 use crate::errors::{closed_error, invalid_argument_error, map_error};
 use crate::iterator::Iterator;
@@ -18,12 +18,12 @@ use crate::utils::get_optional;
 /// After commit or rollback, the transaction is closed.
 #[magnus::wrap(class = "SlateDb::Transaction", free_immediately, size)]
 pub struct Transaction {
-    inner: RefCell<Option<DBTransaction>>,
+    inner: RefCell<Option<DbTransaction>>,
 }
 
 impl Transaction {
-    /// Create a new Transaction from a DBTransaction.
-    pub fn new(txn: DBTransaction) -> Self {
+    /// Create a new Transaction from a DbTransaction.
+    pub fn new(txn: DbTransaction) -> Self {
         Self {
             inner: RefCell::new(Some(txn)),
         }
@@ -263,6 +263,93 @@ impl Transaction {
         Ok(Iterator::new(iter))
     }
 
+    /// Scan all keys with a given prefix within the transaction.
+    pub fn scan_prefix(&self, prefix: String) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let guard = self.inner.borrow();
+        let txn = guard
+            .as_ref()
+            .ok_or_else(|| closed_error("transaction is closed"))?;
+
+        let iter = block_on_result(async { txn.scan_prefix(prefix.as_bytes()).await })?;
+
+        Ok(Iterator::new(iter))
+    }
+
+    /// Scan all keys with a given prefix with options within the transaction.
+    pub fn scan_prefix_with_options(
+        &self,
+        prefix: String,
+        kwargs: RHash,
+    ) -> Result<Iterator, Error> {
+        if prefix.is_empty() {
+            return Err(invalid_argument_error("prefix cannot be empty"));
+        }
+
+        let mut opts = ScanOptions::default();
+
+        if let Some(df) = get_optional::<String>(&kwargs, "durability_filter")? {
+            opts.durability_filter = match df.as_str() {
+                "remote" => DurabilityLevel::Remote,
+                "memory" => DurabilityLevel::Memory,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid durability_filter: {} (expected 'remote' or 'memory')",
+                        other
+                    )))
+                }
+            };
+        }
+
+        if let Some(dirty) = get_optional::<bool>(&kwargs, "dirty")? {
+            opts.dirty = dirty;
+        }
+
+        if let Some(rab) = get_optional::<usize>(&kwargs, "read_ahead_bytes")? {
+            opts.read_ahead_bytes = rab;
+        }
+
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
+        if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
+            opts.max_fetch_tasks = mft;
+        }
+
+        let guard = self.inner.borrow();
+        let txn = guard
+            .as_ref()
+            .ok_or_else(|| closed_error("transaction is closed"))?;
+
+        let iter =
+            block_on_result(async { txn.scan_prefix_with_options(prefix.as_bytes(), &opts).await })?;
+
+        Ok(Iterator::new(iter))
+    }
+
+    /// Mark keys as read for conflict detection.
+    ///
+    /// This explicitly tracks reads for conflict checking in serializable isolation,
+    /// even when the keys weren't actually read via get().
+    ///
+    /// # Arguments
+    /// * `keys` - Array of keys to mark as read
+    pub fn mark_read(&self, keys: Vec<String>) -> Result<(), Error> {
+        let guard = self.inner.borrow();
+        let txn = guard
+            .as_ref()
+            .ok_or_else(|| closed_error("transaction is closed"))?;
+
+        let key_bytes: Vec<&[u8]> = keys.iter().map(|k| k.as_bytes()).collect();
+        txn.mark_read(&key_bytes).map_err(map_error)?;
+
+        Ok(())
+    }
+
     /// Commit the transaction.
     pub fn commit(&self) -> Result<(), Error> {
         let txn = self
@@ -329,6 +416,12 @@ pub fn define_transaction_class(ruby: &Ruby, module: &magnus::RModule) -> Result
         "_scan_with_options",
         method!(Transaction::scan_with_options, 3),
     )?;
+    class.define_method("_scan_prefix", method!(Transaction::scan_prefix, 1))?;
+    class.define_method(
+        "_scan_prefix_with_options",
+        method!(Transaction::scan_prefix_with_options, 2),
+    )?;
+    class.define_method("_mark_read", method!(Transaction::mark_read, 1))?;
     class.define_method("commit", method!(Transaction::commit, 0))?;
     class.define_method(
         "_commit_with_options",
