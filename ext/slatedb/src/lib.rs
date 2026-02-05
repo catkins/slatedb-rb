@@ -21,6 +21,7 @@ mod database;
 mod errors;
 mod iterator;
 mod merge_ops;
+mod metrics;
 mod reader;
 mod runtime;
 mod snapshot;
@@ -46,6 +47,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     snapshot::define_snapshot_class(ruby, &module)?;
     reader::define_reader_class(ruby, &module)?;
     admin::define_admin_class(ruby, &module)?;
+    metrics::define_metrics_class(ruby, &module)?;
 
     Ok(())
 }

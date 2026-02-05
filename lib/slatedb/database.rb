@@ -414,5 +414,12 @@ module SlateDb
       opts[:name] = name if name
       _create_checkpoint(opts)
     end
+
+    # Get database metrics registry.
+    #
+    # @return [Metrics] Metrics registry
+    def metrics
+      _metrics
+    end
   end
 end
