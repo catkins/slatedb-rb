@@ -11,6 +11,7 @@ use slatedb::{Db, IsolationLevel};
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
 use crate::merge_ops::{parse_merge_operator, parse_merge_operator_proc};
+use crate::metrics::Metrics;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
@@ -113,6 +114,11 @@ impl Database {
         // Parse dirty
         if let Some(dirty) = get_optional::<bool>(&kwargs, "dirty")? {
             opts.dirty = dirty;
+        }
+
+        // Parse cache_blocks
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
         }
 
         let result =
@@ -578,6 +584,11 @@ impl Database {
         Ok(())
     }
 
+    /// Return the database metrics registry.
+    pub fn metrics(&self) -> Result<Metrics, Error> {
+        Ok(Metrics::new(self.inner.metrics()))
+    }
+
     /// Close the database.
     pub fn close(&self) -> Result<(), Error> {
         block_on_result(async { self.inner.close().await })?;
@@ -633,6 +644,7 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         method!(Database::create_checkpoint, 1),
     )?;
     class.define_method("flush", method!(Database::flush, 0))?;
+    class.define_method("_metrics", method!(Database::metrics, 0))?;
     class.define_method("close", method!(Database::close, 0))?;
 
     Ok(())

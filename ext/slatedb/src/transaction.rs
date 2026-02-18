@@ -69,6 +69,10 @@ impl Transaction {
             opts.dirty = dirty;
         }
 
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
         let guard = self.inner.borrow();
         let txn = guard
             .as_ref()

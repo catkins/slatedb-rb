@@ -74,6 +74,13 @@ RSpec.describe SlateDb::Database do
       end
     end
 
+    it "accepts cache_blocks option on get" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("key", "value")
+        expect(db.get("key", cache_blocks: false)).to eq("value")
+      end
+    end
+
     it "raises InvalidArgumentError for empty keys on put" do
       SlateDb::Database.open(tmpdir) do |db|
         expect { db.put("", "value") }.to raise_error(SlateDb::InvalidArgumentError)

@@ -116,6 +116,10 @@ impl Reader {
             opts.dirty = dirty;
         }
 
+        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
         let result =
             block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
