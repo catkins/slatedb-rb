@@ -3,10 +3,11 @@ use std::sync::Arc;
 use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{
-    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
+    DurabilityLevel, FlushOptions, FlushType, MergeOptions, PutOptions, ReadOptions, ScanOptions,
+    Ttl, WriteOptions,
 };
 use slatedb::object_store::memory::InMemory;
-use slatedb::{Db, IsolationLevel};
+use slatedb::{Db, IsolationLevel, WriteHandle};
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
@@ -17,6 +18,15 @@ use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
 use crate::utils::{get_optional, resolve_object_store};
 use crate::write_batch::WriteBatch;
+
+/// Convert a WriteHandle to a Ruby hash with :seqnum and :create_ts keys.
+fn write_handle_to_hash(handle: &WriteHandle) -> Result<RHash, Error> {
+    let ruby = Ruby::get().expect("Ruby runtime not available");
+    let hash = ruby.hash_new();
+    hash.aset(ruby.to_symbol("seqnum"), handle.seqnum())?;
+    hash.aset(ruby.to_symbol("create_ts"), handle.create_ts())?;
+    Ok(hash)
+}
 
 /// Ruby wrapper for SlateDB database.
 ///
@@ -152,7 +162,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to store
     /// * `value` - The value to store
-    pub fn put(&self, key: String, value: String) -> Result<(), Error> {
+    pub fn put(&self, key: String, value: String) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -163,13 +173,13 @@ impl Database {
             await_durable: true,
         };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Store a key-value pair with options.
@@ -178,7 +188,7 @@ impl Database {
     /// * `key` - The key to store
     /// * `value` - The value to store
     /// * `kwargs` - Keyword arguments (ttl, await_durable)
-    pub fn put_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn put_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -196,20 +206,20 @@ impl Database {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let write_opts = WriteOptions { await_durable };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Delete a key.
     ///
     /// # Arguments
     /// * `key` - The key to delete
-    pub fn delete(&self, key: String) -> Result<(), Error> {
+    pub fn delete(&self, key: String) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -218,13 +228,13 @@ impl Database {
             await_durable: true,
         };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .delete_with_options(key.as_bytes(), &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Delete a key with options.
@@ -232,7 +242,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to delete
     /// * `kwargs` - Keyword arguments (await_durable)
-    pub fn delete_with_options(&self, key: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn delete_with_options(&self, key: String, kwargs: RHash) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -240,13 +250,13 @@ impl Database {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let write_opts = WriteOptions { await_durable };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .delete_with_options(key.as_bytes(), &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Scan a range of keys.
@@ -428,10 +438,10 @@ impl Database {
     ///
     /// # Arguments
     /// * `batch` - The WriteBatch to write
-    pub fn write(&self, batch: &WriteBatch) -> Result<(), Error> {
+    pub fn write(&self, batch: &WriteBatch) -> Result<RHash, Error> {
         let batch_inner = batch.take()?;
-        block_on_result(async { self.inner.write(batch_inner).await })?;
-        Ok(())
+        let handle = block_on_result(async { self.inner.write(batch_inner).await })?;
+        write_handle_to_hash(&handle)
     }
 
     /// Write a batch of operations atomically with options.
@@ -439,19 +449,19 @@ impl Database {
     /// # Arguments
     /// * `batch` - The WriteBatch to write
     /// * `kwargs` - Keyword arguments (await_durable)
-    pub fn write_with_options(&self, batch: &WriteBatch, kwargs: RHash) -> Result<(), Error> {
+    pub fn write_with_options(&self, batch: &WriteBatch, kwargs: RHash) -> Result<RHash, Error> {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let write_opts = WriteOptions { await_durable };
 
         let batch_inner = batch.take()?;
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .write_with_options(batch_inner, &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Merge a value into the database.
@@ -459,7 +469,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to merge into
     /// * `value` - The merge operand to apply
-    pub fn merge(&self, key: String, value: String) -> Result<(), Error> {
+    pub fn merge(&self, key: String, value: String) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -470,13 +480,13 @@ impl Database {
             await_durable: true,
         };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Merge a value into the database with options.
@@ -485,7 +495,7 @@ impl Database {
     /// * `key` - The key to merge into
     /// * `value` - The merge operand to apply
     /// * `kwargs` - Keyword arguments (ttl, await_durable)
-    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<RHash, Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -501,13 +511,13 @@ impl Database {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let write_opts = WriteOptions { await_durable };
 
-        block_on_result(async {
+        let handle = block_on_result(async {
             self.inner
                 .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
                 .await
         })?;
 
-        Ok(())
+        write_handle_to_hash(&handle)
     }
 
     /// Begin a new transaction.
@@ -584,9 +594,39 @@ impl Database {
         Ok(())
     }
 
+    /// Flush the database with options.
+    ///
+    /// # Arguments
+    /// * `flush_type` - The type of flush to perform ("wal" or "memtable")
+    pub fn flush_with_options(&self, flush_type: Option<String>) -> Result<(), Error> {
+        let ft = match flush_type.as_deref().unwrap_or("wal") {
+            "wal" => FlushType::Wal,
+            "memtable" => FlushType::MemTable,
+            other => {
+                return Err(invalid_argument_error(&format!(
+                    "invalid flush_type: {} (expected 'wal' or 'memtable')",
+                    other
+                )))
+            }
+        };
+
+        let opts = FlushOptions { flush_type: ft };
+
+        block_on_result(async { self.inner.flush_with_options(opts).await })?;
+        Ok(())
+    }
+
     /// Return the database metrics registry.
     pub fn metrics(&self) -> Result<Metrics, Error> {
         Ok(Metrics::new(self.inner.metrics()))
+    }
+
+    /// Check if the database is healthy.
+    ///
+    /// Returns true if the database is operational, raises an error if not.
+    pub fn status(&self) -> Result<bool, Error> {
+        self.inner.status().map_err(crate::errors::map_error)?;
+        Ok(true)
     }
 
     /// Close the database.
@@ -643,7 +683,12 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         "_create_checkpoint",
         method!(Database::create_checkpoint, 1),
     )?;
-    class.define_method("flush", method!(Database::flush, 0))?;
+    class.define_method("_flush", method!(Database::flush, 0))?;
+    class.define_method(
+        "_flush_with_options",
+        method!(Database::flush_with_options, 1),
+    )?;
+    class.define_method("_status", method!(Database::status, 0))?;
     class.define_method("_metrics", method!(Database::metrics, 0))?;
     class.define_method("close", method!(Database::close, 0))?;
 

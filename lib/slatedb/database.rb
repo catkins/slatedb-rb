@@ -122,6 +122,34 @@ module SlateDb
       else
         _put_with_options(key, value, opts)
       end
+      nil
+    end
+
+    # Store a key-value pair and return write metadata.
+    #
+    # Returns a Hash with :seqnum (sequence number) and :create_ts (creation timestamp)
+    # from the WriteHandle returned by SlateDB 0.11+.
+    #
+    # @param key [String] The key to store
+    # @param value [String] The value to store
+    # @param ttl [Integer, nil] Time-to-live in milliseconds
+    # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @return [Hash] Write metadata with :seqnum and :create_ts keys
+    #
+    # @example Put and get write metadata
+    #   handle = db.put!("key", "value")
+    #   puts "Sequence: #{handle[:seqnum]}, Timestamp: #{handle[:create_ts]}"
+    #
+    def put!(key, value, ttl: nil, await_durable: nil)
+      opts = {}
+      opts[:ttl] = ttl if ttl
+      opts[:await_durable] = await_durable unless await_durable.nil?
+
+      if opts.empty?
+        _put(key, value)
+      else
+        _put_with_options(key, value, opts)
+      end
     end
 
     # Delete a key.
@@ -137,6 +165,21 @@ module SlateDb
     #   db.delete("mykey", await_durable: false)
     #
     def delete(key, await_durable: nil)
+      if await_durable.nil?
+        _delete(key)
+      else
+        _delete_with_options(key, { await_durable: await_durable })
+      end
+      nil
+    end
+
+    # Delete a key and return write metadata.
+    #
+    # @param key [String] The key to delete
+    # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @return [Hash] Write metadata with :seqnum and :create_ts keys
+    #
+    def delete!(key, await_durable: nil)
       if await_durable.nil?
         _delete(key)
       else
@@ -254,6 +297,21 @@ module SlateDb
       else
         _write_with_options(batch, { await_durable: await_durable })
       end
+      nil
+    end
+
+    # Write a batch and return write metadata.
+    #
+    # @param batch [WriteBatch] The batch to write
+    # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @return [Hash] Write metadata with :seqnum and :create_ts keys
+    #
+    def write!(batch, await_durable: nil)
+      if await_durable.nil?
+        _write(batch)
+      else
+        _write_with_options(batch, { await_durable: await_durable })
+      end
     end
 
     # Merge a value into the database.
@@ -270,6 +328,27 @@ module SlateDb
     #   db.merge("key", "part2")
     #
     def merge(key, value, ttl: nil, await_durable: nil)
+      opts = {}
+      opts[:ttl] = ttl if ttl
+      opts[:await_durable] = await_durable unless await_durable.nil?
+
+      if opts.empty?
+        _merge(key, value)
+      else
+        _merge_with_options(key, value, opts)
+      end
+      nil
+    end
+
+    # Merge a value and return write metadata.
+    #
+    # @param key [String] The key to merge into
+    # @param value [String] The merge operand to apply
+    # @param ttl [Integer, nil] Time-to-live in milliseconds
+    # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @return [Hash] Write metadata with :seqnum and :create_ts keys
+    #
+    def merge!(key, value, ttl: nil, await_durable: nil)
       opts = {}
       opts[:ttl] = ttl if ttl
       opts[:await_durable] = await_durable unless await_durable.nil?
@@ -413,6 +492,34 @@ module SlateDb
       opts[:lifetime] = lifetime if lifetime
       opts[:name] = name if name
       _create_checkpoint(opts)
+    end
+
+    # Flush the database.
+    #
+    # @param flush_type [String, Symbol, nil] Type of flush: "wal" (default) or "memtable"
+    # @return [void]
+    #
+    # @example Basic flush (WAL)
+    #   db.flush
+    #
+    # @example Flush memtable
+    #   db.flush(flush_type: :memtable)
+    #
+    def flush(flush_type: nil)
+      if flush_type
+        _flush_with_options(flush_type.to_s)
+      else
+        _flush
+      end
+    end
+
+    # Check if the database is healthy.
+    #
+    # @return [Boolean] true if the database is operational
+    # @raise [SlateDb::Error] if the database is not operational
+    #
+    def status
+      _status
     end
 
     # Get database metrics registry.

@@ -128,6 +128,32 @@ SlateDb::Database.open("mydb", url: "s3://mybucket/path") do |db|
 end
 ```
 
+### Write Metadata (Bang Methods)
+
+Write operations (`put`, `delete`, `write`, `merge`) return `nil` by default for backward compatibility. Use the bang variants (`put!`, `delete!`, `write!`, `merge!`) to get write metadata including sequence numbers and timestamps:
+
+```ruby
+SlateDb::Database.open("/tmp/mydb") do |db|
+  # Bang methods return a Hash with :seqnum and :create_ts
+  handle = db.put!("key", "value")
+  puts handle[:seqnum]     # => 1 (monotonically increasing sequence number)
+  puts handle[:create_ts]  # => 1710000000000 (creation timestamp)
+
+  handle = db.delete!("key")
+  puts handle[:seqnum]     # => 2
+
+  # Works with batches too
+  batch = SlateDb::WriteBatch.new
+  batch.put("k1", "v1")
+  batch.put("k2", "v2")
+  handle = db.write!(batch)
+
+  # And with merge
+  db2 = SlateDb::Database.open("/tmp/mydb2", merge_operator: :string_concat)
+  handle = db2.merge!("log", "entry\n")
+end
+```
+
 ### Options
 
 #### Put Options
@@ -468,7 +494,25 @@ Ensure all writes are persisted:
 
 ```ruby
 db.put("key", "value")
+
+# Flush WAL (default)
 db.flush
+
+# Explicitly flush WAL
+db.flush(flush_type: :wal)
+
+# Flush memtable (forces compaction to SST files)
+db.flush(flush_type: :memtable)
+```
+
+### Database Status
+
+Check whether the database is healthy and operational:
+
+```ruby
+SlateDb::Database.open("/tmp/mydb") do |db|
+  db.status  # => true (database is healthy)
+end
 ```
 
 ## Thread Safety
