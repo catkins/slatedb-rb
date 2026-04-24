@@ -89,7 +89,12 @@ impl WriteBatch {
     ///
     /// Options:
     /// - ttl: Time-to-live in milliseconds
-    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn merge_with_options(
+        &self,
+        key: String,
+        value: String,
+        kwargs: RHash,
+    ) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }

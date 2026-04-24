@@ -5,6 +5,7 @@ use magnus::prelude::*;
 use magnus::{method, Error, RHash, Ruby};
 use slatedb::config::{DurabilityLevel, ReadOptions, ScanOptions};
 use slatedb::DbSnapshot;
+use slatedb::IterationOrder;
 
 use crate::errors::{closed_error, invalid_argument_error};
 use crate::iterator::Iterator;
@@ -147,6 +148,18 @@ impl Snapshot {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let guard = self.inner.borrow();
         let snapshot = guard
@@ -221,6 +234,18 @@ impl Snapshot {
 
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
+        }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
         }
 
         let guard = self.inner.borrow();

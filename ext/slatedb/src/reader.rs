@@ -4,10 +4,10 @@ use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{DbReaderOptions, DurabilityLevel, ReadOptions, ScanOptions};
 use slatedb::DbReader;
+use slatedb::IterationOrder;
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
-use crate::merge_ops::parse_merge_operator;
 use crate::runtime::block_on_result;
 use crate::utils::{get_optional, resolve_object_store};
 
@@ -27,7 +27,7 @@ impl Reader {
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
     /// * `checkpoint_id` - Optional checkpoint UUID to read at
-    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime, max_memtable_bytes, merge_operator)
+    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime, max_memtable_bytes)
     pub fn open(
         path: String,
         url: Option<String>,
@@ -40,7 +40,7 @@ impl Reader {
         let checkpoint_lifetime = get_optional::<u64>(&kwargs, "checkpoint_lifetime")?
             .map(std::time::Duration::from_millis);
         let max_memtable_bytes = get_optional::<u64>(&kwargs, "max_memtable_bytes")?;
-        let merge_operator = parse_merge_operator(&kwargs)?;
+        let skip_wal_replay = get_optional::<bool>(&kwargs, "skip_wal_replay")?;
 
         // Parse checkpoint_id as UUID
         let checkpoint_uuid =
@@ -53,11 +53,12 @@ impl Reader {
             };
 
         let reader = block_on_result(async {
-            let object_store: Arc<dyn slatedb::object_store::ObjectStore> = if let Some(ref url) = url {
-                resolve_object_store(url)?
-            } else {
-                Arc::new(slatedb::object_store::memory::InMemory::new())
-            };
+            let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
+                if let Some(ref url) = url {
+                    resolve_object_store(url)?
+                } else {
+                    Arc::new(slatedb::object_store::memory::InMemory::new())
+                };
 
             let mut options = DbReaderOptions::default();
             if let Some(interval) = manifest_poll_interval {
@@ -69,10 +70,9 @@ impl Reader {
             if let Some(max_bytes) = max_memtable_bytes {
                 options.max_memtable_bytes = max_bytes;
             }
-            if let Some(merge_operator) = merge_operator {
-                options.merge_operator = Some(merge_operator);
+            if let Some(skip_replay) = skip_wal_replay {
+                options.skip_wal_replay = skip_replay;
             }
-
             DbReader::open(path, object_store, checkpoint_uuid, options).await
         })?;
 
@@ -195,6 +195,18 @@ impl Reader {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let start_bytes = start.into_bytes();
         let end_bytes = end_key.map(|e| e.into_bytes());
@@ -259,6 +271,18 @@ impl Reader {
 
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
+        }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
         }
 
         let iter = block_on_result(async {
