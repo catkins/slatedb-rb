@@ -14,9 +14,7 @@ module SlateDb
     #
     # @return [Hash] Map of metric name to value
     def to_h
-      names.each_with_object({}) do |metric_name, memo|
-        memo[metric_name] = get(metric_name)
-      end
+      names.to_h { |metric_name| [metric_name, get(metric_name)] }
     end
   end
 end
