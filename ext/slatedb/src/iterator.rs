@@ -98,7 +98,10 @@ impl Iterator {
         let result = block_on(async {
             let mut guard = inner.lock().await;
             match guard.as_mut() {
-                Some(iter) => iter.seek(key.as_bytes()).await.map_err(IteratorError::Slate),
+                Some(iter) => iter
+                    .seek(key.as_bytes())
+                    .await
+                    .map_err(IteratorError::Slate),
                 None => Err(IteratorError::Closed),
             }
         });

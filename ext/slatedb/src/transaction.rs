@@ -6,6 +6,7 @@ use slatedb::config::{
     DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
 };
 use slatedb::DbTransaction;
+use slatedb::IterationOrder;
 
 use crate::errors::{closed_error, invalid_argument_error, map_error};
 use crate::iterator::Iterator;
@@ -78,8 +79,7 @@ impl Transaction {
             .as_ref()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        let result =
-            block_on_result(async { txn.get_with_options(key.as_bytes(), &opts).await })?;
+        let result = block_on_result(async { txn.get_with_options(key.as_bytes(), &opts).await })?;
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
     }
 
@@ -159,7 +159,12 @@ impl Transaction {
     }
 
     /// Merge a value with options within the transaction.
-    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn merge_with_options(
+        &self,
+        key: String,
+        value: String,
+        kwargs: RHash,
+    ) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -248,6 +253,18 @@ impl Transaction {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let guard = self.inner.borrow();
         let txn = guard
@@ -323,14 +340,27 @@ impl Transaction {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let guard = self.inner.borrow();
         let txn = guard
             .as_ref()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        let iter =
-            block_on_result(async { txn.scan_prefix_with_options(prefix.as_bytes(), &opts).await })?;
+        let iter = block_on_result(async {
+            txn.scan_prefix_with_options(prefix.as_bytes(), &opts).await
+        })?;
 
         Ok(Iterator::new(iter))
     }

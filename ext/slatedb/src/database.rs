@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
@@ -6,7 +7,7 @@ use slatedb::config::{
     DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
 };
 use slatedb::object_store::memory::InMemory;
-use slatedb::{Db, IsolationLevel};
+use slatedb::{Db, IsolationLevel, IterationOrder};
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
@@ -24,9 +25,15 @@ use crate::write_batch::WriteBatch;
 #[magnus::wrap(class = "SlateDb::Database", free_immediately, size)]
 pub struct Database {
     inner: Arc<Db>,
+    metrics: Arc<Mutex<HashMap<String, i64>>>,
 }
 
 impl Database {
+    fn increment_metric(&self, name: &str) {
+        let mut metrics = self.metrics.lock().expect("metrics mutex poisoned");
+        *metrics.entry(name.to_string()).or_insert(0) += 1;
+    }
+
     /// Open a database at the given path.
     ///
     /// # Arguments
@@ -38,8 +45,7 @@ impl Database {
     /// A new Database instance
     pub fn open(path: String, url: Option<String>, kwargs: RHash) -> Result<Self, Error> {
         // Try string-based merge operator first, then proc-based
-        let merge_operator = parse_merge_operator(&kwargs)?
-            .or(parse_merge_operator_proc(&kwargs)?);
+        let merge_operator = parse_merge_operator(&kwargs)?.or(parse_merge_operator_proc(&kwargs)?);
 
         let db = block_on_result(async {
             let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
@@ -59,6 +65,7 @@ impl Database {
 
         Ok(Self {
             inner: Arc::new(db),
+            metrics: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -78,6 +85,7 @@ impl Database {
 
         let result =
             block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
+        self.increment_metric("db.get.count");
 
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
     }
@@ -123,6 +131,7 @@ impl Database {
 
         let result =
             block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
+        self.increment_metric("db.get_with_options.count");
 
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
     }
@@ -143,6 +152,7 @@ impl Database {
 
         let result =
             block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
+        self.increment_metric("db.get_bytes.count");
 
         Ok(result.map(|b| b.to_vec()))
     }
@@ -168,6 +178,7 @@ impl Database {
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
                 .await
         })?;
+        self.increment_metric("db.put.count");
 
         Ok(())
     }
@@ -201,6 +212,7 @@ impl Database {
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
                 .await
         })?;
+        self.increment_metric("db.put_with_options.count");
 
         Ok(())
     }
@@ -223,6 +235,7 @@ impl Database {
                 .delete_with_options(key.as_bytes(), &write_opts)
                 .await
         })?;
+        self.increment_metric("db.delete.count");
 
         Ok(())
     }
@@ -245,6 +258,7 @@ impl Database {
                 .delete_with_options(key.as_bytes(), &write_opts)
                 .await
         })?;
+        self.increment_metric("db.delete_with_options.count");
 
         Ok(())
     }
@@ -331,6 +345,18 @@ impl Database {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let start_bytes = start.into_bytes();
         let end_bytes = end_key.map(|e| e.into_bytes());
@@ -414,6 +440,18 @@ impl Database {
         if let Some(mft) = get_optional::<usize>(&kwargs, "max_fetch_tasks")? {
             opts.max_fetch_tasks = mft;
         }
+        if let Some(order) = get_optional::<String>(&kwargs, "order")? {
+            opts.order = match order.as_str() {
+                "ascending" | "asc" => IterationOrder::Ascending,
+                "descending" | "desc" => IterationOrder::Descending,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid order: {} (expected 'asc' or 'desc')",
+                        other
+                    )))
+                }
+            };
+        }
 
         let iter = block_on_result(async {
             self.inner
@@ -485,7 +523,12 @@ impl Database {
     /// * `key` - The key to merge into
     /// * `value` - The merge operand to apply
     /// * `kwargs` - Keyword arguments (ttl, await_durable)
-    pub fn merge_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
+    pub fn merge_with_options(
+        &self,
+        key: String,
+        value: String,
+        kwargs: RHash,
+    ) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
@@ -554,8 +597,8 @@ impl Database {
     pub fn create_checkpoint(&self, kwargs: RHash) -> Result<RHash, Error> {
         use slatedb::config::{CheckpointOptions, CheckpointScope};
 
-        let lifetime = get_optional::<u64>(&kwargs, "lifetime")?
-            .map(std::time::Duration::from_millis);
+        let lifetime =
+            get_optional::<u64>(&kwargs, "lifetime")?.map(std::time::Duration::from_millis);
         let name = get_optional::<String>(&kwargs, "name")?;
 
         let options = CheckpointOptions {
@@ -586,7 +629,7 @@ impl Database {
 
     /// Return the database metrics registry.
     pub fn metrics(&self) -> Result<Metrics, Error> {
-        Ok(Metrics::new(self.inner.metrics()))
+        Ok(Metrics::new(self.metrics.clone()))
     }
 
     /// Close the database.

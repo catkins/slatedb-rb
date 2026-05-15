@@ -149,9 +149,7 @@ impl RubyProcMergeOperator {
             "Ruby merge operator called from non-Ruby thread, using fallback concatenation. \
              This can happen during background compaction."
         );
-        let mut result = existing_value
-            .map(|v| v.to_vec())
-            .unwrap_or_default();
+        let mut result = existing_value.map(|v| v.to_vec()).unwrap_or_default();
         result.extend_from_slice(new_value);
         Ok(Bytes::from(result))
     }
