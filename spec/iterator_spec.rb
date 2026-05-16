@@ -35,6 +35,32 @@ RSpec.describe SlateDb::Iterator do
     end
   end
 
+  describe "scan order" do
+    it "scans ranges in descending order" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("a", "1")
+        db.put("b", "2")
+        db.put("c", "3")
+
+        entries = db.scan("a", nil, order: :desc).to_a
+
+        expect(entries).to eq([%w[c 3], %w[b 2], %w[a 1]])
+      end
+    end
+
+    it "scans prefixes in descending order" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("user:1", "one")
+        db.put("user:2", "two")
+        db.put("other:1", "ignored")
+
+        entries = db.scan_prefix("user:", order: :desc).to_a
+
+        expect(entries).to eq([["user:2", "two"], ["user:1", "one"]])
+      end
+    end
+  end
+
   describe "#next_entry_bytes" do
     it "returns key-value pairs as byte arrays" do
       SlateDb::Database.open(tmpdir) do |db|

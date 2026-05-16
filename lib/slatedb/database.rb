@@ -95,6 +95,34 @@ module SlateDb
       end
     end
 
+    # Get a key-value pair with SlateDB metadata.
+    #
+    # @param key [String] The key to look up
+    # @param durability_filter [String, nil] Filter by durability level ("remote" or "memory")
+    # @param dirty [Boolean, nil] Whether to include uncommitted data
+    # @param cache_blocks [Boolean, nil] Whether to cache blocks
+    # @return [Hash, nil] A hash with :key, :value, :seq, :create_ts, and :expire_ts, or nil if not found
+    #
+    # @example Inspect metadata
+    #   entry = db.get_key_value("mykey")
+    #   entry[:value] # => "myvalue"
+    #   entry[:seq]   # => sequence number
+    #
+    def get_key_value(key, durability_filter: nil, dirty: nil, cache_blocks: nil)
+      opts = {}
+      opts[:durability_filter] = durability_filter.to_s if durability_filter
+      opts[:dirty] = dirty unless dirty.nil?
+      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+
+      if opts.empty?
+        _get_key_value(key)
+      else
+        _get_key_value_with_options(key, opts)
+      end
+    end
+
+    alias get_entry get_key_value
+
     # Store a key-value pair.
     #
     # @param key [String] The key to store
@@ -153,6 +181,7 @@ module SlateDb
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
+    # @param order [Symbol, String, nil] Iteration order (:asc/:ascending or :desc/:descending)
     # @return [Iterator] An iterator over key-value pairs
     #
     # @example Basic scan
@@ -171,13 +200,15 @@ module SlateDb
     #   end
     #
     def scan(start_key, end_key = nil, durability_filter: nil, dirty: nil,
-             read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+             read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
+      opts = scan_options(
+        durability_filter: durability_filter,
+        dirty: dirty,
+        read_ahead_bytes: read_ahead_bytes,
+        cache_blocks: cache_blocks,
+        max_fetch_tasks: max_fetch_tasks,
+        order: order
+      )
 
       iter = if opts.empty?
                _scan(start_key, end_key)
@@ -200,6 +231,7 @@ module SlateDb
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
+    # @param order [Symbol, String, nil] Iteration order (:asc/:ascending or :desc/:descending)
     # @return [Iterator] An iterator over key-value pairs
     #
     # @example Scan all user keys
@@ -208,13 +240,15 @@ module SlateDb
     #   end
     #
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
-                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
+      opts = scan_options(
+        durability_filter: durability_filter,
+        dirty: dirty,
+        read_ahead_bytes: read_ahead_bytes,
+        cache_blocks: cache_blocks,
+        max_fetch_tasks: max_fetch_tasks,
+        order: order
+      )
 
       iter = if opts.empty?
                _scan_prefix(prefix)
@@ -228,6 +262,20 @@ module SlateDb
         iter
       end
     end
+
+    def scan_options(durability_filter:, dirty:, read_ahead_bytes:, cache_blocks:,
+                     max_fetch_tasks:, order:)
+      opts = {}
+      opts[:durability_filter] = durability_filter.to_s if durability_filter
+      opts[:dirty] = dirty unless dirty.nil?
+      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
+      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+      opts[:order] = order.to_s if order
+      opts
+    end
+
+    private :scan_options
 
     # Write a batch of operations atomically.
     #

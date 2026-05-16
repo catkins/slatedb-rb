@@ -7,7 +7,7 @@ use slatedb::config::{
     DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
 };
 use slatedb::object_store::memory::InMemory;
-use slatedb::{Db, IsolationLevel, IterationOrder};
+use slatedb::{Db, IsolationLevel, IterationOrder, KeyValue};
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
@@ -32,6 +32,50 @@ impl Database {
     fn increment_metric(&self, name: &str) {
         let mut metrics = self.metrics.lock().expect("metrics mutex poisoned");
         *metrics.entry(name.to_string()).or_insert(0) += 1;
+    }
+
+    fn key_value_to_hash(kv: KeyValue) -> Result<RHash, Error> {
+        let ruby = Ruby::get().expect("Ruby runtime not available");
+        let hash = ruby.hash_new();
+        hash.aset(
+            ruby.to_symbol("key"),
+            String::from_utf8_lossy(&kv.key).to_string(),
+        )?;
+        hash.aset(
+            ruby.to_symbol("value"),
+            String::from_utf8_lossy(&kv.value).to_string(),
+        )?;
+        hash.aset(ruby.to_symbol("seq"), kv.seq)?;
+        hash.aset(ruby.to_symbol("create_ts"), kv.create_ts)?;
+        hash.aset(ruby.to_symbol("expire_ts"), kv.expire_ts)?;
+        Ok(hash)
+    }
+
+    fn read_options_from_kwargs(kwargs: &RHash) -> Result<ReadOptions, Error> {
+        let mut opts = ReadOptions::default();
+
+        if let Some(df) = get_optional::<String>(kwargs, "durability_filter")? {
+            opts.durability_filter = match df.as_str() {
+                "remote" => DurabilityLevel::Remote,
+                "memory" => DurabilityLevel::Memory,
+                other => {
+                    return Err(invalid_argument_error(&format!(
+                        "invalid durability_filter: {} (expected 'remote' or 'memory')",
+                        other
+                    )))
+                }
+            };
+        }
+
+        if let Some(dirty) = get_optional::<bool>(kwargs, "dirty")? {
+            opts.dirty = dirty;
+        }
+
+        if let Some(cb) = get_optional::<bool>(kwargs, "cache_blocks")? {
+            opts.cache_blocks = cb;
+        }
+
+        Ok(opts)
     }
 
     /// Open a database at the given path.
@@ -103,37 +147,64 @@ impl Database {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let mut opts = ReadOptions::default();
-
-        // Parse durability_filter
-        if let Some(df) = get_optional::<String>(&kwargs, "durability_filter")? {
-            opts.durability_filter = match df.as_str() {
-                "remote" => DurabilityLevel::Remote,
-                "memory" => DurabilityLevel::Memory,
-                other => {
-                    return Err(invalid_argument_error(&format!(
-                        "invalid durability_filter: {} (expected 'remote' or 'memory')",
-                        other
-                    )))
-                }
-            };
-        }
-
-        // Parse dirty
-        if let Some(dirty) = get_optional::<bool>(&kwargs, "dirty")? {
-            opts.dirty = dirty;
-        }
-
-        // Parse cache_blocks
-        if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
-            opts.cache_blocks = cb;
-        }
+        let opts = Self::read_options_from_kwargs(&kwargs)?;
 
         let result =
             block_on_result(async { self.inner.get_with_options(key.as_bytes(), &opts).await })?;
         self.increment_metric("db.get_with_options.count");
 
         Ok(result.map(|b| String::from_utf8_lossy(&b).to_string()))
+    }
+
+    /// Get a key-value pair with metadata by key.
+    ///
+    /// # Arguments
+    /// * `key` - The key to look up
+    ///
+    /// # Returns
+    /// A Hash with key, value, seq, create_ts, and expire_ts, or nil if not found
+    pub fn get_key_value(&self, key: String) -> Result<Option<RHash>, Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let opts = ReadOptions::default();
+        let result = block_on_result(async {
+            self.inner
+                .get_key_value_with_options(key.as_bytes(), &opts)
+                .await
+        })?;
+        self.increment_metric("db.get_key_value.count");
+
+        result.map(Self::key_value_to_hash).transpose()
+    }
+
+    /// Get a key-value pair with metadata by key with options.
+    ///
+    /// # Arguments
+    /// * `key` - The key to look up
+    /// * `kwargs` - Keyword arguments (durability_filter, dirty, cache_blocks)
+    ///
+    /// # Returns
+    /// A Hash with key, value, seq, create_ts, and expire_ts, or nil if not found
+    pub fn get_key_value_with_options(
+        &self,
+        key: String,
+        kwargs: RHash,
+    ) -> Result<Option<RHash>, Error> {
+        if key.is_empty() {
+            return Err(invalid_argument_error("key cannot be empty"));
+        }
+
+        let opts = Self::read_options_from_kwargs(&kwargs)?;
+        let result = block_on_result(async {
+            self.inner
+                .get_key_value_with_options(key.as_bytes(), &opts)
+                .await
+        })?;
+        self.increment_metric("db.get_key_value_with_options.count");
+
+        result.map(Self::key_value_to_hash).transpose()
     }
 
     /// Get a value by key as raw bytes.
@@ -649,6 +720,11 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
     // Instance methods - simple versions
     class.define_method("_get", method!(Database::get, 1))?;
     class.define_method("_get_with_options", method!(Database::get_with_options, 2))?;
+    class.define_method("_get_key_value", method!(Database::get_key_value, 1))?;
+    class.define_method(
+        "_get_key_value_with_options",
+        method!(Database::get_key_value_with_options, 2),
+    )?;
     class.define_method("get_bytes", method!(Database::get_bytes, 1))?;
     class.define_method("_put", method!(Database::put, 2))?;
     class.define_method("_put_with_options", method!(Database::put_with_options, 3))?;

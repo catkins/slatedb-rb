@@ -151,6 +151,29 @@ db.get("key", durability_filter: "remote")
 db.get("key", dirty: true)
 ```
 
+#### Key-Value Metadata
+
+SlateDB can return the full key-value record, including storage metadata:
+
+```ruby
+db.put("key", "value")
+entry = db.get_key_value("key")
+# => { key: "key", value: "value", seq: 1, create_ts: 1_765_000_000_000, expire_ts: nil }
+
+entry[:value]     # => "value"
+entry[:seq]       # SlateDB sequence number
+entry[:create_ts] # creation timestamp in milliseconds
+entry[:expire_ts] # expiration timestamp in milliseconds, or nil
+
+# Alias for the same API
+db.get_entry("key")
+
+# The same read options accepted by #get are supported
+db.get_key_value("key", durability_filter: "memory", cache_blocks: false)
+```
+
+Missing keys return `nil`, matching `#get`.
+
 #### Delete Options
 
 ```ruby
@@ -170,6 +193,11 @@ end
 
 # Scan a specific range [start, end)
 db.scan("a", "z").each do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Scan in descending key order
+db.scan("a", "z", order: :desc).each do |key, value|
   puts "#{key}: #{value}"
 end
 
@@ -193,6 +221,11 @@ end
 
 # Block form
 db.scan_prefix("order:") do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Prefix scans can also run in descending key order
+db.scan_prefix("user:", order: :desc).each do |key, value|
   puts "#{key}: #{value}"
 end
 
