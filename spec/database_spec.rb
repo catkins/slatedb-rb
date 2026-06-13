@@ -94,6 +94,48 @@ RSpec.describe SlateDb::Database do
     end
   end
 
+  describe "#get_key_value" do
+    it "returns value metadata for an existing key" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("metadata-key", "metadata-value")
+
+        entry = db.get_key_value("metadata-key")
+
+        expect(entry).to include(
+          key: "metadata-key",
+          value: "metadata-value",
+          expire_ts: nil
+        )
+        expect(entry[:seq]).to be_a(Integer)
+        expect(entry[:create_ts]).to be_a(Integer)
+      end
+    end
+
+    it "returns nil for missing keys" do
+      SlateDb::Database.open(tmpdir) do |db|
+        expect(db.get_key_value("missing-key")).to be_nil
+      end
+    end
+
+    it "accepts read options" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("metadata-key", "metadata-value")
+
+        entry = db.get_key_value("metadata-key", cache_blocks: false)
+
+        expect(entry[:value]).to eq("metadata-value")
+      end
+    end
+
+    it "provides get_entry as an alias" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("metadata-key", "metadata-value")
+
+        expect(db.get_entry("metadata-key")[:value]).to eq("metadata-value")
+      end
+    end
+  end
+
   describe "#delete" do
     it "removes a key" do
       SlateDb::Database.open(tmpdir) do |db|
