@@ -494,9 +494,12 @@ SlateDb::Reader.open("/tmp/mydb",
   reader.get("key")
 end
 
-# Cap the reader's open file-handle cache (SlateDB >= 0.13.0)
+# Enable the reader's on-disk cache and cap its open file handles
+# (max_open_file_handles, added in SlateDB 0.13.0, only takes effect when
+# cache_root is set, since that is what enables the cached object store).
 SlateDb::Reader.open("/tmp/mydb",
                      url: "s3://bucket/path",
+                     cache_root: "/var/cache/slatedb",
                      max_open_file_handles: 256) do |reader|
   reader.get("key")
 end

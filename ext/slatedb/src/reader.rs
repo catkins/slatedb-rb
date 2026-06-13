@@ -27,7 +27,10 @@ impl Reader {
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
     /// * `checkpoint_id` - Optional checkpoint UUID to read at
-    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime, max_memtable_bytes)
+    /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime,
+    ///   max_memtable_bytes, skip_wal_replay, cache_root, max_open_file_handles).
+    ///   The local disk cache (and therefore `max_open_file_handles`) is only active
+    ///   when `cache_root` is set.
     pub fn open(
         path: String,
         url: Option<String>,
@@ -42,6 +45,7 @@ impl Reader {
         let max_memtable_bytes = get_optional::<u64>(&kwargs, "max_memtable_bytes")?;
         let skip_wal_replay = get_optional::<bool>(&kwargs, "skip_wal_replay")?;
         let max_open_file_handles = get_optional::<usize>(&kwargs, "max_open_file_handles")?;
+        let cache_root = get_optional::<String>(&kwargs, "cache_root")?;
 
         // Parse checkpoint_id as UUID
         let checkpoint_uuid =
@@ -73,6 +77,10 @@ impl Reader {
             }
             if let Some(skip_replay) = skip_wal_replay {
                 options.skip_wal_replay = skip_replay;
+            }
+            if let Some(ref root) = cache_root {
+                options.object_store_cache_options.root_folder =
+                    Some(std::path::PathBuf::from(root));
             }
             if let Some(max_handles) = max_open_file_handles {
                 options.object_store_cache_options.max_open_file_handles = max_handles;

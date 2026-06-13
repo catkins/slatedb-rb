@@ -28,7 +28,10 @@ RSpec.describe SlateDb::Reader do
     context "with a persistent object store" do
       around do |example|
         Dir.mktmpdir("slatedb-reader-test") do |dir|
-          @url = "file://#{dir}"
+          @dir = dir
+          @url = "file://#{dir}/store"
+          @cache_root = File.join(dir, "cache")
+          FileUtils.mkdir_p(@cache_root)
           @path = "reader_db_#{SecureRandom.hex(8)}"
           example.run
         end
@@ -51,6 +54,18 @@ RSpec.describe SlateDb::Reader do
         SlateDb::Reader.open(@path, url: @url, max_open_file_handles: 16) do |reader|
           expect(reader.get("key")).to eq("value")
         end
+      end
+
+      it "populates the on-disk cache when cache_root is set" do
+        SlateDb::Reader.open(@path, url: @url, cache_root: @cache_root,
+                                    max_open_file_handles: 8) do |reader|
+          expect(reader.get("key")).to eq("value")
+        end
+
+        # Setting cache_root constructs the cached object store (the component
+        # that honours max_open_file_handles), which writes cache files locally.
+        cache_files = Dir.glob(File.join(@cache_root, "**", "*")).select { |f| File.file?(f) }
+        expect(cache_files).not_to be_empty
       end
     end
   end
