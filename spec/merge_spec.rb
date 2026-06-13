@@ -393,13 +393,12 @@ RSpec.describe "Merge Operations" do
   end
 
   describe "without merge operator" do
-    it "raises error when reading merged values without merge_operator configured" do
+    it "raises an error when merging without a merge_operator configured" do
       SlateDb::Database.open(tmpdir) do |db|
-        # Merge succeeds without an operator
-        db.merge("key", "value")
-
-        # But reading the merged value fails
-        expect { db.get("key") }.to raise_error(SlateDb::InvalidArgumentError, /merge operator missing/)
+        # As of SlateDB 0.13.0, a merge is rejected up-front when no merge
+        # operator is configured, rather than deferring the failure to read time.
+        expect { db.merge("key", "value") }
+          .to raise_error(SlateDb::InvalidArgumentError, /merge operator missing/)
       end
     end
   end

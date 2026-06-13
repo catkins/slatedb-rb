@@ -138,6 +138,34 @@ db.put("key", "value", ttl: 60_000)  # expires in 60 seconds
 
 # Don't wait for durability
 db.put("key", "value", await_durable: false)
+
+# Supply an explicit sequence number (SlateDB >= 0.13.0)
+db.put("key", "value", seqnum: 42)
+```
+
+#### User-Supplied Sequence Numbers
+
+By default SlateDB assigns a monotonically increasing sequence number to every
+write. Since SlateDB 0.13.0 you can instead supply your own via `seqnum:`. The
+value must be **strictly greater** than the current maximum sequence number, or
+the write is rejected with `SlateDb::InvalidArgumentError`. This is useful when
+replaying an external log or coordinating sequence numbers across systems.
+
+```ruby
+db.put("key", "value", seqnum: 1_000)
+db.delete("old", seqnum: 1_001)
+db.merge("counter", "5", seqnum: 1_002)        # requires a merge operator
+db.write(batch, seqnum: 1_003)                 # applied across the batch
+db.batch(seqnum: 1_004) { |b| b.put("k", "v") }
+
+# The sequence number is reflected in the stored record
+db.put("key", "value", seqnum: 2_000)
+db.get_key_value("key")[:seq]  # => 2000
+
+# On a transaction it is supplied at commit time
+txn = db.begin_transaction
+txn.put("k", "v")
+txn.commit(seqnum: 3_000)
 ```
 
 #### Get Options
@@ -179,6 +207,9 @@ Missing keys return `nil`, matching `#get`.
 ```ruby
 # Don't wait for durability
 db.delete("key", await_durable: false)
+
+# Supply an explicit sequence number (SlateDB >= 0.13.0)
+db.delete("key", seqnum: 42)
 ```
 
 ### Scanning
@@ -460,6 +491,13 @@ end
 SlateDb::Reader.open("/tmp/mydb", 
                      url: "s3://bucket/path",
                      checkpoint_id: "uuid-here") do |reader|
+  reader.get("key")
+end
+
+# Cap the reader's open file-handle cache (SlateDB >= 0.13.0)
+SlateDb::Reader.open("/tmp/mydb",
+                     url: "s3://bucket/path",
+                     max_open_file_handles: 256) do |reader|
   reader.get("key")
 end
 ```

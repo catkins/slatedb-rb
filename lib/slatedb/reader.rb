@@ -11,6 +11,9 @@ module SlateDb
       # @param manifest_poll_interval [Integer, nil] Poll interval in milliseconds
       # @param checkpoint_lifetime [Integer, nil] Checkpoint lifetime in milliseconds
       # @param max_memtable_bytes [Integer, nil] Maximum memtable size in bytes
+      # @param max_open_file_handles [Integer, nil] Maximum number of file handles to keep
+      #   open in the reader's file-handle cache. When the limit is reached, the least
+      #   recently used handle is closed (default: 1000). (Requires SlateDB >= 0.13.0)
       # @param merge_operator [Symbol, String, nil] Optional merge operator ("string_concat" or "concat")
       # @yield [reader] If a block is given, yields the reader and ensures it's closed
       # @return [Reader] The opened reader (or block result if block given)
@@ -28,13 +31,17 @@ module SlateDb
       # @example Open at a specific checkpoint
       #   reader = SlateDb::Reader.open("/tmp/mydb", checkpoint_id: "uuid-here")
       #
+      # @example Cap the reader's open file handles
+      #   reader = SlateDb::Reader.open("/tmp/mydb", max_open_file_handles: 256)
+      #
       def open(path, url: nil, checkpoint_id: nil,
                manifest_poll_interval: nil, checkpoint_lifetime: nil,
-               max_memtable_bytes: nil, merge_operator: nil)
+               max_memtable_bytes: nil, max_open_file_handles: nil, merge_operator: nil)
         opts = {}
         opts[:manifest_poll_interval] = manifest_poll_interval if manifest_poll_interval
         opts[:checkpoint_lifetime] = checkpoint_lifetime if checkpoint_lifetime
         opts[:max_memtable_bytes] = max_memtable_bytes if max_memtable_bytes
+        opts[:max_open_file_handles] = max_open_file_handles if max_open_file_handles
         opts[:merge_operator] = merge_operator.to_s if merge_operator
 
         reader = _open(path, url, checkpoint_id, opts)

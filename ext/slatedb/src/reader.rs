@@ -41,6 +41,7 @@ impl Reader {
             .map(std::time::Duration::from_millis);
         let max_memtable_bytes = get_optional::<u64>(&kwargs, "max_memtable_bytes")?;
         let skip_wal_replay = get_optional::<bool>(&kwargs, "skip_wal_replay")?;
+        let max_open_file_handles = get_optional::<usize>(&kwargs, "max_open_file_handles")?;
 
         // Parse checkpoint_id as UUID
         let checkpoint_uuid =
@@ -72,6 +73,9 @@ impl Reader {
             }
             if let Some(skip_replay) = skip_wal_replay {
                 options.skip_wal_replay = skip_replay;
+            }
+            if let Some(max_handles) = max_open_file_handles {
+                options.object_store_cache_options.max_open_file_handles = max_handles;
             }
             DbReader::open(path, object_store, checkpoint_uuid, options).await
         })?;
