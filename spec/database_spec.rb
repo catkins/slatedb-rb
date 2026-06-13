@@ -169,6 +169,16 @@ RSpec.describe SlateDb::Database do
     end
   end
 
+  describe "#refresh_manifest" do
+    it "refreshes the manifest without error" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("key", "value")
+        db.flush
+        expect { db.refresh_manifest }.not_to raise_error
+      end
+    end
+  end
+
   describe "#close" do
     it "closes without error" do
       db = SlateDb::Database.open(tmpdir)

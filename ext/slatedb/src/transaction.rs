@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use magnus::prelude::*;
 use magnus::{method, Error, RHash, Ruby};
 use slatedb::config::{
-    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
+    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl,
 };
 use slatedb::DbTransaction;
 use slatedb::IterationOrder;
@@ -11,7 +11,7 @@ use slatedb::IterationOrder;
 use crate::errors::{closed_error, invalid_argument_error, map_error};
 use crate::iterator::Iterator;
 use crate::runtime::block_on_result;
-use crate::utils::get_optional;
+use crate::utils::{get_optional, write_options_from_kwargs};
 
 /// Ruby wrapper for SlateDB Transaction.
 ///
@@ -398,8 +398,7 @@ impl Transaction {
 
     /// Commit the transaction with options.
     pub fn commit_with_options(&self, kwargs: RHash) -> Result<(), Error> {
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = write_options_from_kwargs(&kwargs)?;
 
         let txn = self
             .inner
@@ -456,7 +455,7 @@ pub fn define_transaction_class(ruby: &Ruby, module: &magnus::RModule) -> Result
         method!(Transaction::scan_prefix_with_options, 2),
     )?;
     class.define_method("_mark_read", method!(Transaction::mark_read, 1))?;
-    class.define_method("commit", method!(Transaction::commit, 0))?;
+    class.define_method("_commit", method!(Transaction::commit, 0))?;
     class.define_method(
         "_commit_with_options",
         method!(Transaction::commit_with_options, 1),

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use magnus::value::ReprValue;
 use magnus::{Error, RHash, Ruby, TryConvert};
+use slatedb::config::WriteOptions;
 use slatedb::object_store::aws::AmazonS3Builder;
 use slatedb::object_store::{Error as ObjectStoreError, ObjectStore, ObjectStoreScheme};
 use slatedb::{Db, Error as SlateError};
@@ -21,6 +22,24 @@ pub fn get_optional<T: TryConvert>(hash: &RHash, key: &str) -> Result<Option<T>,
         }
         None => Ok(None),
     }
+}
+
+/// Build [`WriteOptions`] from Ruby keyword arguments.
+///
+/// Recognised keys:
+/// * `await_durable` (Boolean, default `true`) - whether the write blocks until
+///   it has been durably committed.
+/// * `seqnum` (Integer, default `0`) - an optional user-defined sequence number
+///   for the write. When non-zero, the provided value is used instead of the
+///   internally generated sequence number and must be strictly greater than the
+///   current maximum sequence number, otherwise the write fails.
+pub fn write_options_from_kwargs(kwargs: &RHash) -> Result<WriteOptions, Error> {
+    let await_durable = get_optional::<bool>(kwargs, "await_durable")?.unwrap_or(true);
+    let seqnum = get_optional::<u64>(kwargs, "seqnum")?.unwrap_or(0);
+    Ok(WriteOptions {
+        await_durable,
+        seqnum,
+    })
 }
 
 /// Convert an object_store error to a SlateDB error

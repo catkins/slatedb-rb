@@ -129,6 +129,9 @@ module SlateDb
     # @param value [String] The value to store
     # @param ttl [Integer, nil] Time-to-live in milliseconds
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the
+    #   write. When provided it overrides the internally generated sequence number
+    #   and must be strictly greater than the current maximum sequence number.
     # @return [void]
     #
     # @example Basic put
@@ -140,10 +143,14 @@ module SlateDb
     # @example Put without waiting for durability
     #   db.put("mykey", "myvalue", await_durable: false)
     #
-    def put(key, value, ttl: nil, await_durable: nil)
+    # @example Put with an explicit sequence number
+    #   db.put("mykey", "myvalue", seqnum: 42)
+    #
+    def put(key, value, ttl: nil, await_durable: nil, seqnum: nil)
       opts = {}
       opts[:ttl] = ttl if ttl
       opts[:await_durable] = await_durable unless await_durable.nil?
+      opts[:seqnum] = seqnum if seqnum
 
       if opts.empty?
         _put(key, value)
@@ -156,6 +163,7 @@ module SlateDb
     #
     # @param key [String] The key to delete
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the write
     # @return [void]
     #
     # @example Basic delete
@@ -164,11 +172,15 @@ module SlateDb
     # @example Delete without waiting for durability
     #   db.delete("mykey", await_durable: false)
     #
-    def delete(key, await_durable: nil)
-      if await_durable.nil?
+    def delete(key, await_durable: nil, seqnum: nil)
+      opts = {}
+      opts[:await_durable] = await_durable unless await_durable.nil?
+      opts[:seqnum] = seqnum if seqnum
+
+      if opts.empty?
         _delete(key)
       else
-        _delete_with_options(key, { await_durable: await_durable })
+        _delete_with_options(key, opts)
       end
     end
 
@@ -281,6 +293,7 @@ module SlateDb
     #
     # @param batch [WriteBatch] The batch to write
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the batch
     # @return [void]
     #
     # @example Write a batch
@@ -296,11 +309,15 @@ module SlateDb
     #     b.put("key2", "value2")
     #   end
     #
-    def write(batch, await_durable: nil)
-      if await_durable.nil?
+    def write(batch, await_durable: nil, seqnum: nil)
+      opts = {}
+      opts[:await_durable] = await_durable unless await_durable.nil?
+      opts[:seqnum] = seqnum if seqnum
+
+      if opts.empty?
         _write(batch)
       else
-        _write_with_options(batch, { await_durable: await_durable })
+        _write_with_options(batch, opts)
       end
     end
 
@@ -310,6 +327,7 @@ module SlateDb
     # @param value [String] The merge operand to apply
     # @param ttl [Integer, nil] Time-to-live in milliseconds
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the write
     # @return [void]
     #
     # @example Merge with string concatenation operator
@@ -317,10 +335,11 @@ module SlateDb
     #   db.merge("key", "part1")
     #   db.merge("key", "part2")
     #
-    def merge(key, value, ttl: nil, await_durable: nil)
+    def merge(key, value, ttl: nil, await_durable: nil, seqnum: nil)
       opts = {}
       opts[:ttl] = ttl if ttl
       opts[:await_durable] = await_durable unless await_durable.nil?
+      opts[:seqnum] = seqnum if seqnum
 
       if opts.empty?
         _merge(key, value)
@@ -332,6 +351,7 @@ module SlateDb
     # Create and write a batch using a block.
     #
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the batch
     # @yield [batch] Yields a WriteBatch to the block
     # @return [void]
     #
@@ -342,10 +362,10 @@ module SlateDb
     #     b.delete("old_key")
     #   end
     #
-    def batch(await_durable: nil)
+    def batch(await_durable: nil, seqnum: nil)
       b = WriteBatch.new
       yield b
-      write(b, await_durable: await_durable)
+      write(b, await_durable: await_durable, seqnum: seqnum)
     end
 
     # Begin a new transaction.

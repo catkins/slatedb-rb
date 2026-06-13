@@ -9,6 +9,22 @@ use crate::errors::invalid_argument_error;
 use crate::runtime::{block_on, block_on_result};
 use crate::utils::{get_optional, resolve_object_store};
 
+/// Serialize a manifest value (or list of manifests) to a JSON string,
+/// mapping any serialization failure to a Ruby runtime error.
+///
+/// As of slatedb 0.13, `Admin::read_manifest` / `Admin::list_manifests` return
+/// structured `VersionedManifest` values rather than JSON strings. We serialize
+/// them here to preserve the binding's JSON-string contract.
+fn manifest_to_json<T: serde::Serialize>(value: T) -> Result<String, Error> {
+    serde_json::to_string(&value).map_err(|e| {
+        let ruby = Ruby::get().expect("Ruby runtime not available");
+        Error::new(
+            ruby.exception_runtime_error(),
+            format!("failed to serialize manifest: {}", e),
+        )
+    })
+}
+
 /// Ruby wrapper for SlateDB Admin.
 ///
 /// This struct is exposed to Ruby as `SlateDb::Admin`.
@@ -43,10 +59,12 @@ impl Admin {
     /// # Returns
     /// JSON string of the manifest, or None if no manifests exist.
     pub fn read_manifest(&self, id: Option<u64>) -> Result<Option<String>, Error> {
-        block_on(async { self.inner.read_manifest(id).await }).map_err(|e| {
+        let manifest = block_on(async { self.inner.read_manifest(id).await }).map_err(|e| {
             let ruby = Ruby::get().expect("Ruby runtime not available");
             Error::new(ruby.exception_runtime_error(), format!("{}", e))
-        })
+        })?;
+
+        manifest.map(manifest_to_json).transpose()
     }
 
     /// List manifests within an optional [start, end) range as JSON.
@@ -65,10 +83,12 @@ impl Admin {
             (None, None) => 0..u64::MAX,
         };
 
-        block_on(async { self.inner.list_manifests(range).await }).map_err(|e| {
+        let manifests = block_on(async { self.inner.list_manifests(range).await }).map_err(|e| {
             let ruby = Ruby::get().expect("Ruby runtime not available");
             Error::new(ruby.exception_runtime_error(), format!("{}", e))
-        })
+        })?;
+
+        manifest_to_json(&manifests)
     }
 
     /// Create a detached checkpoint.
@@ -236,6 +256,7 @@ impl Admin {
                     default_opts.compacted_options,
                 ),
                 compactions_options: default_opts.compactions_options,
+                detach_options: default_opts.detach_options,
             }
         };
 

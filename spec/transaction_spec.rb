@@ -96,6 +96,17 @@ RSpec.describe SlateDb::Transaction do
         expect { txn.commit }.to raise_error(SlateDb::ClosedError)
       end
     end
+
+    it "accepts await_durable and seqnum options" do
+      SlateDb::Database.open(tmpdir) do |db|
+        txn = db.begin_transaction
+        txn.put("key", "value")
+        txn.commit(await_durable: true, seqnum: 800)
+
+        expect(db.get("key")).to eq("value")
+        expect(db.get_key_value("key")[:seq]).to eq(800)
+      end
+    end
   end
 
   describe "#rollback" do

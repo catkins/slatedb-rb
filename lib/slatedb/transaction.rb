@@ -141,5 +141,32 @@ module SlateDb
     def mark_read(keys)
       _mark_read(Array(keys))
     end
+
+    # Commit the transaction.
+    #
+    # @param await_durable [Boolean, nil] Whether to wait for the commit to be
+    #   durably persisted (default: true)
+    # @param seqnum [Integer, nil] Optional user-defined sequence number for the
+    #   committed batch. When provided it overrides the internally generated
+    #   sequence number and must be strictly greater than the current maximum.
+    # @return [void]
+    #
+    # @example Basic commit
+    #   txn.commit
+    #
+    # @example Commit without waiting for durability
+    #   txn.commit(await_durable: false)
+    #
+    def commit(await_durable: nil, seqnum: nil)
+      opts = {}
+      opts[:await_durable] = await_durable unless await_durable.nil?
+      opts[:seqnum] = seqnum if seqnum
+
+      if opts.empty?
+        _commit
+      else
+        _commit_with_options(opts)
+      end
+    end
   end
 end

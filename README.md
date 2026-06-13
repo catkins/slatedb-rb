@@ -138,7 +138,15 @@ db.put("key", "value", ttl: 60_000)  # expires in 60 seconds
 
 # Don't wait for durability
 db.put("key", "value", await_durable: false)
+
+# Provide an explicit sequence number for the write. When given, it overrides
+# the internally generated sequence number and must be strictly greater than
+# the current maximum sequence number, otherwise the write is rejected.
+db.put("key", "value", seqnum: 100)
 ```
+
+The `seqnum:` option is also accepted by `#delete`, `#merge`, `#write`, `#batch`
+and `Transaction#commit`.
 
 #### Get Options
 
@@ -179,6 +187,9 @@ Missing keys return `nil`, matching `#get`.
 ```ruby
 # Don't wait for durability
 db.delete("key", await_durable: false)
+
+# Provide an explicit sequence number
+db.delete("key", seqnum: 101)
 ```
 
 ### Scanning
@@ -355,6 +366,10 @@ end
 txn = db.begin_transaction(isolation: :snapshot)
 txn.put("key", "value")
 txn.commit  # or txn.rollback
+
+# Commit with options
+txn.commit(await_durable: false)  # don't block on durability
+txn.commit(seqnum: 200)           # assign an explicit sequence number
 ```
 
 Transaction operations:
@@ -502,6 +517,17 @@ Ensure all writes are persisted:
 ```ruby
 db.put("key", "value")
 db.flush
+```
+
+### Refreshing the Manifest
+
+Force the database to refresh its view of the manifest from the object store.
+This is useful when you know the manifest has changed externally (for example
+after a compaction) and want to ensure this handle has observed the update
+before proceeding:
+
+```ruby
+db.refresh_manifest
 ```
 
 ## Thread Safety

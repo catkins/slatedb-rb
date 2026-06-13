@@ -16,7 +16,7 @@ use crate::metrics::Metrics;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
-use crate::utils::{get_optional, resolve_object_store};
+use crate::utils::{get_optional, resolve_object_store, write_options_from_kwargs};
 use crate::write_batch::WriteBatch;
 
 /// Ruby wrapper for SlateDB database.
@@ -240,9 +240,7 @@ impl Database {
 
         let put_opts = PutOptions { ttl: Ttl::Default };
 
-        let write_opts = WriteOptions {
-            await_durable: true,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
             self.inner
@@ -259,7 +257,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to store
     /// * `value` - The value to store
-    /// * `kwargs` - Keyword arguments (ttl, await_durable)
+    /// * `kwargs` - Keyword arguments (ttl, await_durable, seqnum)
     pub fn put_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
@@ -274,9 +272,7 @@ impl Database {
             },
         };
 
-        // Parse await_durable
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner
@@ -297,9 +293,7 @@ impl Database {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let write_opts = WriteOptions {
-            await_durable: true,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
             self.inner
@@ -315,14 +309,13 @@ impl Database {
     ///
     /// # Arguments
     /// * `key` - The key to delete
-    /// * `kwargs` - Keyword arguments (await_durable)
+    /// * `kwargs` - Keyword arguments (await_durable, seqnum)
     pub fn delete_with_options(&self, key: String, kwargs: RHash) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner
@@ -547,10 +540,9 @@ impl Database {
     ///
     /// # Arguments
     /// * `batch` - The WriteBatch to write
-    /// * `kwargs` - Keyword arguments (await_durable)
+    /// * `kwargs` - Keyword arguments (await_durable, seqnum)
     pub fn write_with_options(&self, batch: &WriteBatch, kwargs: RHash) -> Result<(), Error> {
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = write_options_from_kwargs(&kwargs)?;
 
         let batch_inner = batch.take()?;
 
@@ -575,9 +567,7 @@ impl Database {
 
         let merge_opts = MergeOptions { ttl: Ttl::Default };
 
-        let write_opts = WriteOptions {
-            await_durable: true,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
             self.inner
@@ -593,7 +583,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to merge into
     /// * `value` - The merge operand to apply
-    /// * `kwargs` - Keyword arguments (ttl, await_durable)
+    /// * `kwargs` - Keyword arguments (ttl, await_durable, seqnum)
     pub fn merge_with_options(
         &self,
         key: String,
@@ -612,8 +602,7 @@ impl Database {
             },
         };
 
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner
@@ -698,6 +687,18 @@ impl Database {
         Ok(())
     }
 
+    /// Force the database to refresh its view of the manifest.
+    ///
+    /// This fetches the latest manifest from the object store and waits for the
+    /// refresh to complete. It is useful when you know the manifest has changed
+    /// externally (for example after a compaction) and want to ensure this
+    /// handle has observed the update before proceeding.
+    pub fn refresh_manifest(&self) -> Result<(), Error> {
+        block_on_result(async { self.inner.refresh_manifest().await })?;
+        self.increment_metric("db.refresh_manifest.count");
+        Ok(())
+    }
+
     /// Return the database metrics registry.
     pub fn metrics(&self) -> Result<Metrics, Error> {
         Ok(Metrics::new(self.metrics.clone()))
@@ -763,6 +764,7 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         method!(Database::create_checkpoint, 1),
     )?;
     class.define_method("flush", method!(Database::flush, 0))?;
+    class.define_method("refresh_manifest", method!(Database::refresh_manifest, 0))?;
     class.define_method("_metrics", method!(Database::metrics, 0))?;
     class.define_method("close", method!(Database::close, 0))?;
 

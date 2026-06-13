@@ -24,7 +24,8 @@ Gem::Specification.new do |spec|
     "ext/**/*.{rb,rs,toml}",
     "Cargo.toml",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ]
 
   spec.bindir = "bin"
