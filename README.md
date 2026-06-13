@@ -139,9 +139,10 @@ db.put("key", "value", ttl: 60_000)  # expires in 60 seconds
 # Don't wait for durability
 db.put("key", "value", await_durable: false)
 
-# Provide an explicit sequence number for the write. When given, it overrides
-# the internally generated sequence number and must be strictly greater than
-# the current maximum sequence number, otherwise the write is rejected.
+# Provide an explicit sequence number for the write. When a positive value is
+# given, it overrides the internally generated sequence number and must be
+# strictly greater than the current maximum sequence number, otherwise the
+# write is rejected. A value of 0 means "auto-assign" (the default).
 db.put("key", "value", seqnum: 100)
 ```
 

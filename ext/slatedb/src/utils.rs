@@ -32,7 +32,8 @@ pub fn get_optional<T: TryConvert>(hash: &RHash, key: &str) -> Result<Option<T>,
 /// * `seqnum` (Integer, default `0`) - an optional user-defined sequence number
 ///   for the write. When non-zero, the provided value is used instead of the
 ///   internally generated sequence number and must be strictly greater than the
-///   current maximum sequence number, otherwise the write fails.
+///   current maximum sequence number, otherwise the write fails. A value of `0`
+///   is the sentinel meaning "auto-assign".
 pub fn write_options_from_kwargs(kwargs: &RHash) -> Result<WriteOptions, Error> {
     let await_durable = get_optional::<bool>(kwargs, "await_durable")?.unwrap_or(true);
     let seqnum = get_optional::<u64>(kwargs, "seqnum")?.unwrap_or(0);

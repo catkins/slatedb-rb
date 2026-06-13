@@ -130,8 +130,10 @@ module SlateDb
     # @param ttl [Integer, nil] Time-to-live in milliseconds
     # @param await_durable [Boolean] Whether to wait for durability (default: true)
     # @param seqnum [Integer, nil] Optional user-defined sequence number for the
-    #   write. When provided it overrides the internally generated sequence number
-    #   and must be strictly greater than the current maximum sequence number.
+    #   write. When a positive value is given it overrides the internally
+    #   generated sequence number and must be strictly greater than the current
+    #   maximum sequence number. A value of 0 is treated the same as nil
+    #   (auto-assign).
     # @return [void]
     #
     # @example Basic put

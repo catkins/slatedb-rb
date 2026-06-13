@@ -55,6 +55,41 @@ RSpec.describe SlateDb::Admin do
     end
   end
 
+  # Locks the JSON shape against a shared (file://) object store, where the
+  # admin handle can actually observe manifests written by a database. As of
+  # slatedb 0.13 each manifest is serialized as an object keyed by "id".
+  describe "manifest JSON shape" do
+    around do |example|
+      Dir.mktmpdir("slatedb-admin-shape") do |dir|
+        @shape_dir = dir
+        @shape_url = "file://#{dir}"
+        SlateDb::Database.open(dir, url: @shape_url) do |db|
+          db.put("key", "value")
+          db.flush
+        end
+        example.run
+      end
+    end
+
+    it "#read_manifest returns a JSON object with an id" do
+      admin = SlateDb::Admin.new(@shape_dir, url: @shape_url)
+      parsed = JSON.parse(admin.read_manifest)
+
+      expect(parsed).to be_a(Hash)
+      expect(parsed).to have_key("id")
+    end
+
+    it "#list_manifests returns an array of manifest objects with ids" do
+      admin = SlateDb::Admin.new(@shape_dir, url: @shape_url)
+      parsed = JSON.parse(admin.list_manifests)
+
+      expect(parsed).to be_a(Array)
+      expect(parsed).not_to be_empty
+      expect(parsed.first).to be_a(Hash)
+      expect(parsed.first).to have_key("id")
+    end
+  end
+
   describe "#list_checkpoints" do
     it "requires an initialized manifest" do
       admin = SlateDb::Admin.new(db_path)

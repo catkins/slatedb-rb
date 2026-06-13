@@ -20,6 +20,9 @@ module SlateDb
 
     # Read the latest or a specific manifest as a JSON string.
     #
+    # As of slatedb 0.13 the returned JSON is an object describing the manifest
+    # state (`{"id" => ..., ...}`).
+    #
     # @param id [Integer, nil] Optional manifest id to read. If nil, reads the latest.
     # @return [String, nil] JSON string of the manifest, or nil if no manifests exist
     #
@@ -33,9 +36,13 @@ module SlateDb
 
     # List manifests within an optional [start, end) range as JSON.
     #
+    # As of slatedb 0.13 each entry is the full manifest state (`{"id" => ...,
+    # ...}`); the previous file-metadata fields (location/size/last_modified)
+    # are no longer included.
+    #
     # @param start [Integer, nil] Optional inclusive start id
     # @param end_id [Integer, nil] Optional exclusive end id
-    # @return [String] JSON string containing a list of manifest metadata
+    # @return [String] JSON string containing a list of manifest objects
     #
     # @example
     #   json = admin.list_manifests

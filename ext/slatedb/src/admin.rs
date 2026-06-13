@@ -13,8 +13,13 @@ use crate::utils::{get_optional, resolve_object_store};
 /// mapping any serialization failure to a Ruby runtime error.
 ///
 /// As of slatedb 0.13, `Admin::read_manifest` / `Admin::list_manifests` return
-/// structured `VersionedManifest` values rather than JSON strings. We serialize
-/// them here to preserve the binding's JSON-string contract.
+/// structured `VersionedManifest` values rather than JSON strings, so we
+/// serialize them here. NOTE: the resulting JSON *shape* differs from earlier
+/// releases. `read_manifest` now yields a JSON object (`{"id": ..., ...manifest
+/// state...}`) instead of the previous `[id, manifest]` tuple, and
+/// `list_manifests` now yields full manifest state per entry rather than file
+/// metadata (`location`/`size`/`last_modified` are no longer present). See the
+/// CHANGELOG for details.
 fn manifest_to_json<T: serde::Serialize>(value: T) -> Result<String, Error> {
     serde_json::to_string(&value).map_err(|e| {
         let ruby = Ruby::get().expect("Ruby runtime not available");
@@ -256,6 +261,10 @@ impl Admin {
                     default_opts.compacted_options,
                 ),
                 compactions_options: default_opts.compactions_options,
+                // Preserve the upstream default. `detach_options` controls the
+                // clone-detach pass introduced in slatedb 0.13; for databases
+                // that are not clones (this binding does not expose clone
+                // creation) it is a no-op.
                 detach_options: default_opts.detach_options,
             }
         };

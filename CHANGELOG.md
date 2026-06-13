@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Writing a merge operand (`#merge`) without a configured `merge_operator` is now
   rejected eagerly at write time rather than surfacing on read. This reflects an
   upstream behaviour change in slatedb 0.13.
+- **Breaking (admin):** the JSON shape returned by `Admin#read_manifest` and
+  `Admin#list_manifests` changed because slatedb 0.13 now returns structured
+  manifest values. `#read_manifest` now returns a JSON object
+  (`{"id": ..., ...manifest state...}`) instead of an `[id, manifest]` tuple,
+  and each entry from `#list_manifests` is now the full manifest state rather
+  than file metadata (the `location`, `size`, and `last_modified` fields are no
+  longer present).
+- `Admin#run_gc` now uses the upstream default garbage-collector options, which
+  in slatedb 0.13 include a clone-detach pass. This is a no-op for databases
+  that are not clones.
 
 ### Added
 
