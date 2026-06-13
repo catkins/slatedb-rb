@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1]
+
+### Changed
+
+- Upgraded the underlying `slatedb` crate from `0.13.0` to `0.13.1`. This is an
+  upstream republish with a source-identical tree; there are no API or
+  behaviour changes in the bindings.
+
 ## [0.3.0]
 
 ### Changed
