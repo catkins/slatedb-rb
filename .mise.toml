@@ -1,0 +1,77 @@
+[settings]
+github_attestations = false
+
+[settings.ruby]
+compile = false
+github_attestations = false
+
+[tools]
+ruby = "4.0"
+rust = "1.96.0"
+
+[env]
+BUNDLE_JOBS = "4"
+BUNDLE_RETRY = "3"
+CARGO_TERM_COLOR = "always"
+
+[tasks.deps]
+description = "Install Ruby gem dependencies"
+run = "bundle check || bundle install"
+
+[tasks.compile]
+description = "Compile the native extension"
+run = "bundle exec rake compile"
+depends = ["deps"]
+
+[tasks.test]
+description = "Compile the extension and run the RSpec suite"
+run = "bundle exec rake"
+depends = ["deps"]
+
+[tasks.rubocop]
+description = "Run RuboCop"
+run = "bundle exec rubocop"
+depends = ["deps"]
+
+[tasks.clippy]
+description = "Run cargo clippy"
+run = "cargo clippy --all-targets --all-features"
+
+[tasks.lint]
+description = "Run all lint checks"
+run = """
+mise run clippy
+mise run rubocop
+"""
+
+[tasks."ci:install-system-deps"]
+description = "Install CI system packages required to build the native extension"
+run = """
+if command -v apt-get >/dev/null 2>&1; then
+  if [ "$(id -u)" -eq 0 ]; then
+    apt-get update
+    apt-get install -y --no-install-recommends libclang-dev
+  else
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends libclang-dev
+  fi
+fi
+"""
+
+[tasks."ci:test"]
+description = "Install CI dependencies and run the test suite"
+run = """
+mise run ci:install-system-deps
+mise run test
+"""
+
+[tasks."ci:clippy"]
+description = "Install CI dependencies and run cargo clippy"
+run = """
+mise run ci:install-system-deps
+mise run clippy
+"""
+
+[tasks."ci:rubocop"]
+description = "Run RuboCop in CI"
+run = "mise run rubocop"
