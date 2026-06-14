@@ -6,3 +6,9 @@ Before committing or pushing changes, always run project lint checks and address
 - `bundle exec rubocop`
 
 Do not skip linting, and do not commit with unresolved lint offenses.
+
+Use mise for the project toolchain and common commands:
+
+- `mise install`
+- `mise run test`
+- `mise run lint`

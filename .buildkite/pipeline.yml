@@ -1,24 +1,40 @@
+agents:
+  queue: hosted-linux
+
+cache: ".buildkite/cache-volume"
+
+env:
+  MISE_GITHUB_ATTESTATIONS: "false"
+  MISE_RUBY_GITHUB_ATTESTATIONS: "false"
+
 steps:
   - group: ":ruby: Build & Test"
     steps:
-      - label: ":ruby: Ruby 3.2"
-        command: .buildkite/steps/build-and-test.sh
-        image: "ruby:3.2"
-
       - label: ":ruby: Ruby 3.3"
-        command: .buildkite/steps/build-and-test.sh
-        image: "ruby:3.3"
+        command: mise run ci:test
+        env:
+          MISE_ENV: ruby-3.3
+        plugins:
+          - mise#v1.1.4: ~
 
       - label: ":ruby: Ruby 3.4"
-        command: .buildkite/steps/build-and-test.sh
-        image: "ruby:3.4"
+        command: mise run ci:test
+        env:
+          MISE_ENV: ruby-3.4
+        plugins:
+          - mise#v1.1.4: ~
+
+      - label: ":ruby: Ruby 4.0"
+        command: mise run ci:test
+        plugins:
+          - mise#v1.1.4: ~
 
   - label: ":rubocop: Lint"
-    command:
-      - bundle install
-      - bundle exec rubocop
-    image: "ruby:3.4"
+    command: mise run ci:rubocop
+    plugins:
+      - mise#v1.1.4: ~
 
   - label: ":rust: Cargo Check & Clippy"
-    command: .buildkite/steps/clippy.sh
-    image: "ruby:3.4"
+    command: mise run ci:clippy
+    plugins:
+      - mise#v1.1.4: ~

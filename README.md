@@ -601,7 +601,7 @@ Exception hierarchy:
 
 ## Requirements
 
-- Ruby 3.1+
+- Ruby 3.3+
 - Rust toolchain (for building from source)
 
 ## Development
