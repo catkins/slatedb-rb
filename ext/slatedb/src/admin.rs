@@ -43,10 +43,18 @@ impl Admin {
     /// # Returns
     /// JSON string of the manifest, or None if no manifests exist.
     pub fn read_manifest(&self, id: Option<u64>) -> Result<Option<String>, Error> {
-        block_on(async { self.inner.read_manifest(id).await }).map_err(|e| {
+        let manifest = block_on(async { self.inner.read_manifest(id).await }).map_err(|e| {
             let ruby = Ruby::get().expect("Ruby runtime not available");
             Error::new(ruby.exception_runtime_error(), format!("{}", e))
-        })
+        })?;
+
+        match manifest {
+            Some(manifest) => Ok(Some(serde_json::to_string(&manifest).map_err(|e| {
+                let ruby = Ruby::get().expect("Ruby runtime not available");
+                Error::new(ruby.exception_runtime_error(), format!("{}", e))
+            })?)),
+            None => Ok(None),
+        }
     }
 
     /// List manifests within an optional [start, end) range as JSON.
@@ -65,7 +73,12 @@ impl Admin {
             (None, None) => 0..u64::MAX,
         };
 
-        block_on(async { self.inner.list_manifests(range).await }).map_err(|e| {
+        let manifests = block_on(async { self.inner.list_manifests(range).await }).map_err(|e| {
+            let ruby = Ruby::get().expect("Ruby runtime not available");
+            Error::new(ruby.exception_runtime_error(), format!("{}", e))
+        })?;
+
+        serde_json::to_string(&manifests).map_err(|e| {
             let ruby = Ruby::get().expect("Ruby runtime not available");
             Error::new(ruby.exception_runtime_error(), format!("{}", e))
         })
@@ -236,6 +249,7 @@ impl Admin {
                     default_opts.compacted_options,
                 ),
                 compactions_options: default_opts.compactions_options,
+                detach_options: default_opts.detach_options,
             }
         };
 

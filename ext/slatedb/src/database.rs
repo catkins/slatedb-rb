@@ -78,6 +78,16 @@ impl Database {
         Ok(opts)
     }
 
+    fn write_options_from_kwargs(kwargs: &RHash) -> Result<WriteOptions, Error> {
+        let await_durable = get_optional::<bool>(kwargs, "await_durable")?.unwrap_or(true);
+        let seqnum = get_optional::<u64>(kwargs, "seqnum")?.unwrap_or(0);
+
+        Ok(WriteOptions {
+            await_durable,
+            seqnum,
+        })
+    }
+
     /// Open a database at the given path.
     ///
     /// # Arguments
@@ -242,6 +252,7 @@ impl Database {
 
         let write_opts = WriteOptions {
             await_durable: true,
+            seqnum: 0,
         };
 
         block_on_result(async {
@@ -259,7 +270,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to store
     /// * `value` - The value to store
-    /// * `kwargs` - Keyword arguments (ttl, await_durable)
+    /// * `kwargs` - Keyword arguments (ttl, await_durable, seqnum)
     pub fn put_with_options(&self, key: String, value: String, kwargs: RHash) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
@@ -275,8 +286,7 @@ impl Database {
         };
 
         // Parse await_durable
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = Self::write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner
@@ -299,6 +309,7 @@ impl Database {
 
         let write_opts = WriteOptions {
             await_durable: true,
+            seqnum: 0,
         };
 
         block_on_result(async {
@@ -315,14 +326,13 @@ impl Database {
     ///
     /// # Arguments
     /// * `key` - The key to delete
-    /// * `kwargs` - Keyword arguments (await_durable)
+    /// * `kwargs` - Keyword arguments (await_durable, seqnum)
     pub fn delete_with_options(&self, key: String, kwargs: RHash) -> Result<(), Error> {
         if key.is_empty() {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = Self::write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner
@@ -547,10 +557,9 @@ impl Database {
     ///
     /// # Arguments
     /// * `batch` - The WriteBatch to write
-    /// * `kwargs` - Keyword arguments (await_durable)
+    /// * `kwargs` - Keyword arguments (await_durable, seqnum)
     pub fn write_with_options(&self, batch: &WriteBatch, kwargs: RHash) -> Result<(), Error> {
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = Self::write_options_from_kwargs(&kwargs)?;
 
         let batch_inner = batch.take()?;
 
@@ -577,6 +586,7 @@ impl Database {
 
         let write_opts = WriteOptions {
             await_durable: true,
+            seqnum: 0,
         };
 
         block_on_result(async {
@@ -593,7 +603,7 @@ impl Database {
     /// # Arguments
     /// * `key` - The key to merge into
     /// * `value` - The merge operand to apply
-    /// * `kwargs` - Keyword arguments (ttl, await_durable)
+    /// * `kwargs` - Keyword arguments (ttl, await_durable, seqnum)
     pub fn merge_with_options(
         &self,
         key: String,
@@ -612,8 +622,7 @@ impl Database {
             },
         };
 
-        let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let write_opts = Self::write_options_from_kwargs(&kwargs)?;
 
         block_on_result(async {
             self.inner

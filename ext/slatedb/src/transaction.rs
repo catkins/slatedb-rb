@@ -399,7 +399,11 @@ impl Transaction {
     /// Commit the transaction with options.
     pub fn commit_with_options(&self, kwargs: RHash) -> Result<(), Error> {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
-        let write_opts = WriteOptions { await_durable };
+        let seqnum = get_optional::<u64>(&kwargs, "seqnum")?.unwrap_or(0);
+        let write_opts = WriteOptions {
+            await_durable,
+            seqnum,
+        };
 
         let txn = self
             .inner
@@ -456,7 +460,7 @@ pub fn define_transaction_class(ruby: &Ruby, module: &magnus::RModule) -> Result
         method!(Transaction::scan_prefix_with_options, 2),
     )?;
     class.define_method("_mark_read", method!(Transaction::mark_read, 1))?;
-    class.define_method("commit", method!(Transaction::commit, 0))?;
+    class.define_method("_commit", method!(Transaction::commit, 0))?;
     class.define_method(
         "_commit_with_options",
         method!(Transaction::commit_with_options, 1),
