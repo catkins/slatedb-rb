@@ -12,3 +12,10 @@ Use mise for the project toolchain and common commands:
 - `mise install`
 - `mise run test`
 - `mise run lint`
+
+Release pipeline notes:
+
+- The Buildkite release pipeline slug is `slatedb-rb-release`.
+- Keep the release pipeline non-public/private.
+- Release builds are intended to run from git tags and publish through the RubyGems OIDC API key role, not a long-lived RubyGems token.
+- Use `mise run release:build-gem` with `RELEASE_PLATFORM` for native gem builds.
