@@ -44,6 +44,61 @@ mise run clippy
 mise run rubocop
 """
 
+[tasks."release:build-gem"]
+description = "Cross-compile a native gem for RELEASE_PLATFORM"
+run = """
+test -n "${RELEASE_PLATFORM:-}" || {
+  echo "RELEASE_PLATFORM is required" >&2
+  exit 1
+}
+
+bundle exec rb-sys-dock --platform "$RELEASE_PLATFORM" --ruby-versions "3.3,3.4,4.0" --build
+"""
+depends = ["deps"]
+
+[tasks."release:smoke-install-gem"]
+description = "Install a built gem and verify it loads"
+run = """
+gem_file="${RELEASE_GEM_FILE:-}"
+
+if [ -z "$gem_file" ]; then
+  gem_file="$(find pkg -name '*.gem' | head -n 1)"
+fi
+
+if [ -z "$gem_file" ] || [ ! -f "$gem_file" ]; then
+  echo "No gem found to smoke install" >&2
+  exit 1
+fi
+
+gem install "$gem_file" --local --no-document
+smoke_dir="$(mktemp -d)"
+cd "$smoke_dir"
+ruby -rslatedb -e 'puts SlateDb::VERSION'
+"""
+
+[tasks."release:publish-gems"]
+description = "Publish pre-built gems from pkg/ to RubyGems"
+run = """
+test -n "${GEM_HOST_API_KEY:-}" || {
+  echo "GEM_HOST_API_KEY is required" >&2
+  exit 1
+}
+
+found_gem=0
+
+for gem_file in pkg/*.gem; do
+  [ -e "$gem_file" ] || continue
+  found_gem=1
+  gem push "$gem_file"
+done
+
+if [ "$found_gem" -eq 0 ]; then
+  echo "No gems found in pkg/" >&2
+  exit 1
+fi
+"""
+depends = ["deps"]
+
 [tasks."ci:install-system-deps"]
 description = "Install CI system packages required to build the native extension"
 run = """
