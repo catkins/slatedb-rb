@@ -1,0 +1,54 @@
+agents:
+  queue: hosted-linux
+
+cache: ".buildkite/cache-volume"
+
+env:
+  MISE_GITHUB_ATTESTATIONS: "false"
+  MISE_RUBY_GITHUB_ATTESTATIONS: "false"
+
+steps:
+  - group: ":package: Native gems"
+    key: native-gems
+    if: build.tag != null
+    steps:
+      - label: ":package: {{matrix}} gem"
+        command: |
+          mise run release:build-gem
+          buildkite-agent artifact upload "pkg/*-${RELEASE_PLATFORM}.gem"
+        env:
+          RELEASE_PLATFORM: "{{matrix}}"
+        matrix:
+          - x86_64-linux
+          - aarch64-linux
+          - x86_64-linux-musl
+          - arm64-darwin
+          - x86_64-darwin
+        plugins:
+          - mise#v1.1.4: ~
+
+  - label: ":mac: Smoke install arm64-darwin gem"
+    key: macos-smoke
+    if: build.tag != null
+    depends_on: native-gems
+    agents:
+      queue: hosted-macos
+    command: |
+      buildkite-agent artifact download "pkg/*-arm64-darwin.gem" .
+      mise run release:smoke-install-gem
+    plugins:
+      - mise#v1.1.4: ~
+
+  - wait: ~
+    if: build.tag != null
+
+  - label: ":rubygems: Publish"
+    if: build.tag != null
+    command: |
+      buildkite-agent artifact download "pkg/*.gem" .
+      ls -lh pkg/*.gem
+      mise run release:publish-gems
+    plugins:
+      - mise#v1.1.4: ~
+      - rubygems-oidc#v0.2.0:
+          role: rg_oidc_akr_rslt9xbwpcnjzgothwtv
