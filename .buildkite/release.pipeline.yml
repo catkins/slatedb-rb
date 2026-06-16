@@ -15,7 +15,7 @@ steps:
       - label: ":package: {{matrix}} gem"
         command: |
           mise run release:build-gem
-          buildkite-agent artifact upload "pkg/*-${RELEASE_PLATFORM}.gem"
+          buildkite-agent artifact upload "pkg/*-{{matrix}}.gem"
         env:
           RELEASE_PLATFORM: "{{matrix}}"
         matrix:
