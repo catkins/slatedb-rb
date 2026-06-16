@@ -51,4 +51,4 @@ steps:
     plugins:
       - mise#v1.1.4: ~
       - rubygems-oidc#v0.2.0:
-          role: rg_oidc_akr_rslt9xbwpcnjzgothwtv
+          role: rg_oidc_akr_rs1t9xbwpcnjzgothwtv
