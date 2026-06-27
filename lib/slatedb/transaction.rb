@@ -92,7 +92,13 @@ module SlateDb
 
     # Scan all keys with a given prefix within the transaction.
     #
+    # The scan can be narrowed to a sub-range within the prefix using
+    # +range_start+ (inclusive) and +range_end+ (exclusive). These bounds are
+    # key suffixes appended to the prefix; see Database#scan_prefix.
+    #
     # @param prefix [String] The key prefix to scan
+    # @param range_start [String, nil] Inclusive lower bound, as a suffix appended to the prefix
+    # @param range_end [String, nil] Exclusive upper bound, as a suffix appended to the prefix
     # @param durability_filter [String, nil] Filter by durability level
     # @param dirty [Boolean, nil] Whether to include uncommitted data
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
@@ -100,14 +106,17 @@ module SlateDb
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
     # @return [Iterator] An iterator over key-value pairs
     #
-    def scan_prefix(prefix, durability_filter: nil, dirty: nil,
+    def scan_prefix(prefix, range_start: nil, range_end: nil, durability_filter: nil, dirty: nil,
                     read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+      opts = {
+        durability_filter: durability_filter&.to_s,
+        dirty: dirty,
+        read_ahead_bytes: read_ahead_bytes,
+        cache_blocks: cache_blocks,
+        max_fetch_tasks: max_fetch_tasks,
+        range_start: range_start,
+        range_end: range_end
+      }.compact
 
       iter = if opts.empty?
                _scan_prefix(prefix)

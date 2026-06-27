@@ -268,6 +268,29 @@ db.transaction do |txn|
 end
 ```
 
+A prefix scan can be narrowed to a sub-range *within* the prefix using
+`range_start` and `range_end`. These bounds are key **suffixes** that are
+appended to the prefix, so for the prefix `"user:"` a `range_start` of `"0005"`
+begins at the key `"user:0005"`. The start bound is inclusive and the end bound
+is exclusive, matching `scan`:
+
+```ruby
+# Keys "user:0005" up to (but not including) "user:0042"
+db.scan_prefix("user:", range_start: "0005", range_end: "0042").each do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Only an inclusive lower bound (to the end of the prefix)
+db.scan_prefix("user:", range_start: "0005")
+
+# Only an exclusive upper bound (from the start of the prefix)
+db.scan_prefix("user:", range_end: "0042")
+```
+
+`range_start`/`range_end` can be combined with `order:` and the other scan
+options, and are available on `Database`, `Transaction`, `Snapshot`, and
+`Reader`.
+
 ### Merge Operations
 
 Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:

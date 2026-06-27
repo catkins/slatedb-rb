@@ -239,7 +239,15 @@ module SlateDb
 
     # Scan all keys with a given prefix.
     #
+    # The scan can be narrowed to a sub-range *within* the prefix using
+    # +range_start+ and +range_end+. These bounds are key suffixes that are
+    # appended to the prefix: passing <tt>range_start: "0005"</tt> for the
+    # prefix <tt>"user:"</tt> starts at the key <tt>"user:0005"</tt>. The start
+    # bound is inclusive and the end bound is exclusive, mirroring +scan+.
+    #
     # @param prefix [String] The key prefix to scan
+    # @param range_start [String, nil] Inclusive lower bound, as a suffix appended to the prefix
+    # @param range_end [String, nil] Exclusive upper bound, as a suffix appended to the prefix
     # @param durability_filter [String, nil] Filter by durability level ("remote" or "memory")
     # @param dirty [Boolean, nil] Whether to include uncommitted data
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
@@ -253,7 +261,11 @@ module SlateDb
     #     puts "#{key}: #{value}"
     #   end
     #
-    def scan_prefix(prefix, durability_filter: nil, dirty: nil,
+    # @example Scan a sub-range within a prefix
+    #   # keys "user:0005" up to (but not including) "user:0042"
+    #   db.scan_prefix("user:", range_start: "0005", range_end: "0042")
+    #
+    def scan_prefix(prefix, range_start: nil, range_end: nil, durability_filter: nil, dirty: nil,
                     read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
       opts = scan_options(
         durability_filter: durability_filter,
@@ -263,6 +275,8 @@ module SlateDb
         max_fetch_tasks: max_fetch_tasks,
         order: order
       )
+      opts[:range_start] = range_start if range_start
+      opts[:range_end] = range_end if range_end
 
       iter = if opts.empty?
                _scan_prefix(prefix)

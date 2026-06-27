@@ -10,7 +10,7 @@ use slatedb::IterationOrder;
 use crate::errors::{closed_error, invalid_argument_error};
 use crate::iterator::Iterator;
 use crate::runtime::block_on_result;
-use crate::utils::get_optional;
+use crate::utils::{get_optional, prefix_subrange_from_kwargs};
 
 /// Ruby wrapper for SlateDB Snapshot.
 ///
@@ -190,7 +190,7 @@ impl Snapshot {
             .as_ref()
             .ok_or_else(|| closed_error("snapshot is closed"))?;
 
-        let iter = block_on_result(async { snapshot.scan_prefix(prefix.as_bytes()).await })?;
+        let iter = block_on_result(async { snapshot.scan_prefix(prefix.as_bytes(), ..).await })?;
 
         Ok(Iterator::new(iter))
     }
@@ -248,6 +248,8 @@ impl Snapshot {
             };
         }
 
+        let subrange = prefix_subrange_from_kwargs(&kwargs)?;
+
         let guard = self.inner.borrow();
         let snapshot = guard
             .as_ref()
@@ -255,7 +257,7 @@ impl Snapshot {
 
         let iter = block_on_result(async {
             snapshot
-                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .scan_prefix_with_options(prefix.as_bytes(), subrange, &opts)
                 .await
         })?;
 
