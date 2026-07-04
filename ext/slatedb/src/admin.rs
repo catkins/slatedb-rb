@@ -199,7 +199,8 @@ impl Admin {
     ///   - `compacted_min_age`: Specific minimum age in milliseconds for compacted directory
     ///
     /// If `min_age` is provided, it will be used for all directories unless a specific override is provided.
-    /// If no options are provided, defaults are used (manifest: 1 day, wal: 1 minute, compacted: 1 minute).
+    /// If no options are provided, SlateDB's defaults are used (as of 0.14, a 5-minute minimum age for
+    /// the manifest, WAL, and compacted directories).
     pub fn run_gc(&self, kwargs: RHash) -> Result<(), Error> {
         use slatedb::config::GarbageCollectorDirectoryOptions;
 
@@ -230,9 +231,10 @@ impl Admin {
                         Some(GarbageCollectorDirectoryOptions {
                             interval: default_opts.as_ref().and_then(|o| o.interval),
                             min_age: std::time::Duration::from_millis(ms),
-                            // Preserve the default dry_run setting for the directory
-                            // (e.g. WAL fence GC defaults to dry_run) rather than
-                            // forcing real deletions when a min_age override is given.
+                            // Preserve the directory's default dry_run flag rather than
+                            // hard-coding it. This helper only runs for the manifest, WAL,
+                            // and compacted directories (all of which default to real
+                            // deletions); WAL fence GC is handled separately below.
                             dry_run: default_opts.as_ref().map(|o| o.dry_run).unwrap_or(false),
                         })
                     } else {

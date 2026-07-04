@@ -26,6 +26,9 @@ module SlateDb
     return {} if range.nil?
     raise ArgumentError, "suffix must be a Range, got #{range.class}" unless range.is_a?(Range)
 
+    validate_suffix_bound(range.begin)
+    validate_suffix_bound(range.end)
+
     opts = {}
     opts[:start] = range.begin unless range.begin.nil?
     unless range.end.nil?
@@ -34,6 +37,30 @@ module SlateDb
     end
     opts
   end
+
+  # Build the common option hash shared by the `scan` / `scan_prefix` bindings
+  # from their keyword arguments, omitting any that were not supplied.
+  #
+  # @return [Hash] Option keys understood by the native scan methods.
+  def self.scan_options(durability_filter: nil, dirty: nil, read_ahead_bytes: nil,
+                        cache_blocks: nil, max_fetch_tasks: nil, order: nil)
+    opts = {}
+    opts[:durability_filter] = durability_filter.to_s if durability_filter
+    opts[:dirty] = dirty unless dirty.nil?
+    opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
+    opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+    opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+    opts[:order] = order.to_s if order
+    opts
+  end
+
+  # @api private
+  def self.validate_suffix_bound(bound)
+    return if bound.nil? || bound.is_a?(String)
+
+    raise ArgumentError, "suffix range bounds must be Strings, got #{bound.class}"
+  end
+  private_class_method :validate_suffix_bound
 end
 
 # Load Ruby class extensions

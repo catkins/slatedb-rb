@@ -127,19 +127,19 @@ module SlateDb
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
+    # @param order [Symbol, String, nil] Iteration order (:asc/:ascending or :desc/:descending)
     # @param suffix [Range, nil] Restrict the scan to a range of key *suffixes*
     #   (the part of each key after +prefix+). See {Database#scan_prefix} for
     #   the semantics. (Requires SlateDB >= 0.14.0)
     # @return [Iterator] An iterator over key-value pairs
     #
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
-                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, suffix: nil, &)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil,
+                    order: nil, suffix: nil, &)
+      opts = SlateDb.scan_options(
+        durability_filter: durability_filter, dirty: dirty, read_ahead_bytes: read_ahead_bytes,
+        cache_blocks: cache_blocks, max_fetch_tasks: max_fetch_tasks, order: order
+      )
       opts.merge!(SlateDb.suffix_range_options(suffix))
 
       iter = if opts.empty?

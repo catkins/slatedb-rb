@@ -215,7 +215,7 @@ module SlateDb
     #
     def scan(start_key, end_key = nil, durability_filter: nil, dirty: nil,
              read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
-      opts = scan_options(
+      opts = SlateDb.scan_options(
         durability_filter: durability_filter,
         dirty: dirty,
         read_ahead_bytes: read_ahead_bytes,
@@ -267,7 +267,7 @@ module SlateDb
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
                     read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil,
                     suffix: nil, &)
-      opts = scan_options(
+      opts = SlateDb.scan_options(
         durability_filter: durability_filter,
         dirty: dirty,
         read_ahead_bytes: read_ahead_bytes,
@@ -289,20 +289,6 @@ module SlateDb
         iter
       end
     end
-
-    def scan_options(durability_filter:, dirty:, read_ahead_bytes:, cache_blocks:,
-                     max_fetch_tasks:, order:)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
-      opts[:order] = order.to_s if order
-      opts
-    end
-
-    private :scan_options
 
     # Write a batch of operations atomically.
     #

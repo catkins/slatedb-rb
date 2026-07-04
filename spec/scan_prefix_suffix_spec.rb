@@ -120,6 +120,24 @@ RSpec.describe "scan_prefix suffix range" do
         end.to raise_error(ArgumentError, /Range/)
       end
     end
+
+    it "raises a clean ArgumentError for non-String range bounds" do
+      SlateDb::Database.open(tmpdir) do |db|
+        expect do
+          db.scan_prefix("event:", suffix: 2024..2025)
+        end.to raise_error(ArgumentError, /Strings/)
+      end
+    end
+
+    it "composes suffix with order on a snapshot" do
+      SlateDb::Database.open(tmpdir) do |db|
+        seed(db)
+        db.snapshot do |snap|
+          result = keys(snap.scan_prefix("event:", suffix: "2023".."2025", order: :desc))
+          expect(result).to eq(["event:2025", "event:2024", "event:2023"])
+        end
+      end
+    end
   end
 
   describe "Snapshot#scan_prefix with suffix:" do
@@ -191,6 +209,10 @@ RSpec.describe "scan_prefix suffix range" do
 
     it "raises for a non-range" do
       expect { SlateDb.suffix_range_options("a") }.to raise_error(ArgumentError, /Range/)
+    end
+
+    it "raises for non-String bounds" do
+      expect { SlateDb.suffix_range_options(1..2) }.to raise_error(ArgumentError, /Strings/)
     end
   end
 end

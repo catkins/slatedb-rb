@@ -288,8 +288,10 @@ db.scan_prefix("event:", suffix: ..."2024")       # everything before 2024
 snap.scan_prefix("event:", suffix: "2024"..."2025")
 ```
 
-Bounds must be non-empty strings and describe a non-empty range, otherwise
-`SlateDb::InvalidArgumentError` is raised.
+Range bounds must be strings (a non-String bound raises `ArgumentError`). Each
+bound must be a non-empty string and the range must be non-empty, otherwise
+`SlateDb::InvalidArgumentError` is raised. Beginless/endless ranges leave the
+corresponding side unbounded.
 
 ### Merge Operations
 

@@ -124,8 +124,9 @@ pub fn resolve_object_store(url: &str) -> Result<Arc<dyn ObjectStore>, SlateErro
             // with the caller's `path` argument nested underneath.
             use slatedb::object_store::prefix::PrefixStore;
 
-            // Lowercase env keys because parse_url_opts only recognises
-            // lower-case option keys.
+            // Pass lower-cased env keys through as object-store options, exactly
+            // as SlateDB's own resolver does, so credential/config env vars are
+            // matched case-insensitively for schemes that consume them.
             let env_vars = std::env::vars().map(|(key, value)| (key.to_ascii_lowercase(), value));
             let (object_store, path) =
                 slatedb::object_store::parse_url_opts(&parsed_url, env_vars)
