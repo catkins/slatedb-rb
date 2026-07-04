@@ -246,6 +246,11 @@ module SlateDb
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
     # @param order [Symbol, String, nil] Iteration order (:asc/:ascending or :desc/:descending)
+    # @param suffix [Range, nil] Restrict the scan to a range of key *suffixes*
+    #   (the part of each key after +prefix+). A bound +s+ selects the full key
+    #   +prefix + s+. Endless (+"a".."+) and beginless (+.."z"+) ranges are
+    #   supported, as are inclusive (+"a".."z"+) and exclusive (+"a"..."z"+)
+    #   ends. Bounds must be non-empty strings. (Requires SlateDB >= 0.14.0)
     # @return [Iterator] An iterator over key-value pairs
     #
     # @example Scan all user keys
@@ -253,8 +258,15 @@ module SlateDb
     #     puts "#{key}: #{value}"
     #   end
     #
+    # @example Scan a sub-range of a prefix by key suffix
+    #   # Keys "event:2024".."event:2025" (exclusive), i.e. all of 2024.
+    #   db.scan_prefix("event:", suffix: "2024"..."2025") do |key, value|
+    #     puts key
+    #   end
+    #
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
-                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil,
+                    suffix: nil, &)
       opts = scan_options(
         durability_filter: durability_filter,
         dirty: dirty,
@@ -263,6 +275,7 @@ module SlateDb
         max_fetch_tasks: max_fetch_tasks,
         order: order
       )
+      opts.merge!(SlateDb.suffix_range_options(suffix))
 
       iter = if opts.empty?
                _scan_prefix(prefix)

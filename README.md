@@ -268,6 +268,29 @@ db.transaction do |txn|
 end
 ```
 
+Restrict a prefix scan to a range of key **suffixes** (the part of each key
+after the prefix) by passing a `Range` as `suffix:` (requires SlateDB >=
+0.14.0). A bound `s` selects the full key `prefix + s`, so it lets you page or
+window within a prefix without materialising the whole set:
+
+```ruby
+# Keys "event:2024".."event:2025", i.e. every 2024 event (exclusive end)
+db.scan_prefix("event:", suffix: "2024"..."2025").each do |key, value|
+  puts key
+end
+
+# Inclusive end (..), endless and beginless ranges are all supported
+db.scan_prefix("event:", suffix: "2024".."2026") # 2024 through 2026 inclusive
+db.scan_prefix("event:", suffix: "2024"..)        # 2024 and later
+db.scan_prefix("event:", suffix: ..."2024")       # everything before 2024
+
+# Available on transactions, snapshots, and readers too
+snap.scan_prefix("event:", suffix: "2024"..."2025")
+```
+
+Bounds must be non-empty strings and describe a non-empty range, otherwise
+`SlateDb::InvalidArgumentError` is raised.
+
 ### Merge Operations
 
 Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:
