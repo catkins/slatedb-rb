@@ -11,7 +11,7 @@ name = "slatedb"
 crate-type = ["cdylib"]
 
 [dependencies]
-slatedb = "=0.14.0"
+slatedb = "0.14.1"
 magnus = { version = "0.8.2", features = ["rb-sys"] }
 rb-sys = { version = "0.9.128", features = ["stable-api-compiled-fallback"] }
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync"] }
