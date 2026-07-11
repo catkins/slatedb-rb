@@ -268,6 +268,27 @@ db.transaction do |txn|
 end
 ```
 
+You can narrow a prefix scan to a sub-range using the `from:` (inclusive) and
+`to:` (exclusive) options (SlateDB >= 0.14.0). Both are key *suffixes* that are
+appended to the prefix, so they let you paginate or resume within a prefix
+without building full-key ranges by hand. The scan never escapes the prefix.
+
+```ruby
+# Keys "user:100" (inclusive) up to "user:200" (exclusive)
+db.scan_prefix("user:", from: "100", to: "200").each do |key, value|
+  puts "#{key}: #{value}"
+end
+
+# Only a lower bound: from "user:500" to the end of the prefix
+db.scan_prefix("user:", from: "500")
+
+# Only an upper bound: from the start of the prefix up to (but not including) "user:100"
+db.scan_prefix("user:", to: "100")
+
+# Sub-ranges compose with order: and work on transactions, snapshots, and readers
+db.scan_prefix("user:", from: "100", to: "200", order: :desc)
+```
+
 ### Merge Operations
 
 Merge operations allow you to combine values without reading them first, useful for counters, append-only logs, and similar patterns:

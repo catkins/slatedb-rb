@@ -246,6 +246,11 @@ module SlateDb
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
     # @param order [Symbol, String, nil] Iteration order (:asc/:ascending or :desc/:descending)
+    # @param from [String, nil] Inclusive lower bound suffix, appended to the
+    #   prefix, to start scanning from (e.g. prefix "user:" with from "100"
+    #   starts at "user:100"). Defaults to the start of the prefix.
+    # @param to [String, nil] Exclusive upper bound suffix, appended to the
+    #   prefix, to stop scanning at. Defaults to the end of the prefix.
     # @return [Iterator] An iterator over key-value pairs
     #
     # @example Scan all user keys
@@ -253,8 +258,13 @@ module SlateDb
     #     puts "#{key}: #{value}"
     #   end
     #
+    # @example Scan a sub-range within a prefix
+    #   # keys "user:100" (inclusive) up to "user:200" (exclusive)
+    #   db.scan_prefix("user:", from: "100", to: "200")
+    #
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
-                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil, &)
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, order: nil,
+                    from: nil, to: nil, &)
       opts = scan_options(
         durability_filter: durability_filter,
         dirty: dirty,
@@ -263,6 +273,8 @@ module SlateDb
         max_fetch_tasks: max_fetch_tasks,
         order: order
       )
+      opts[:subrange_from] = from if from
+      opts[:subrange_to] = to if to
 
       iter = if opts.empty?
                _scan_prefix(prefix)

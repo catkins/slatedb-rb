@@ -230,6 +230,7 @@ impl Admin {
                         Some(GarbageCollectorDirectoryOptions {
                             interval: default_opts.as_ref().and_then(|o| o.interval),
                             min_age: std::time::Duration::from_millis(ms),
+                            dry_run: default_opts.as_ref().map(|o| o.dry_run).unwrap_or(false),
                         })
                     } else {
                         default_opts
@@ -243,6 +244,7 @@ impl Admin {
                     default_opts.manifest_options,
                 ),
                 wal_options: make_dir_opts(wal_min_age, min_age, default_opts.wal_options),
+                wal_fence_options: default_opts.wal_fence_options,
                 compacted_options: make_dir_opts(
                     compacted_min_age,
                     min_age,
@@ -250,6 +252,7 @@ impl Admin {
                 ),
                 compactions_options: default_opts.compactions_options,
                 detach_options: default_opts.detach_options,
+                metric_level: default_opts.metric_level,
             }
         };
 

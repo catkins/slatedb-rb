@@ -9,7 +9,7 @@ use slatedb::IterationOrder;
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
 use crate::runtime::block_on_result;
-use crate::utils::{get_optional, resolve_object_store};
+use crate::utils::{get_optional, prefix_subrange_from_kwargs, resolve_object_store};
 
 /// Ruby wrapper for SlateDB Reader.
 ///
@@ -239,7 +239,8 @@ impl Reader {
             return Err(invalid_argument_error("prefix cannot be empty"));
         }
 
-        let iter = block_on_result(async { self.inner.scan_prefix(prefix.as_bytes()).await })?;
+        let iter =
+            block_on_result(async { self.inner.scan_prefix(prefix.as_bytes(), ..).await })?;
 
         Ok(Iterator::new(iter))
     }
@@ -297,9 +298,10 @@ impl Reader {
             };
         }
 
+        let subrange = prefix_subrange_from_kwargs(&kwargs)?;
         let iter = block_on_result(async {
             self.inner
-                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .scan_prefix_with_options(prefix.as_bytes(), subrange, &opts)
                 .await
         })?;
 

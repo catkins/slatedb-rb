@@ -127,16 +127,25 @@ module SlateDb
     # @param read_ahead_bytes [Integer, nil] Number of bytes to read ahead
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @param max_fetch_tasks [Integer, nil] Maximum number of fetch tasks
+    # @param from [String, nil] Inclusive lower bound suffix, appended to the
+    #   prefix, to start scanning from (e.g. prefix "user:" with from "100"
+    #   starts at "user:100"). Defaults to the start of the prefix.
+    # @param to [String, nil] Exclusive upper bound suffix, appended to the
+    #   prefix, to stop scanning at. Defaults to the end of the prefix.
     # @return [Iterator] An iterator over key-value pairs
     #
     def scan_prefix(prefix, durability_filter: nil, dirty: nil,
-                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil, &)
-      opts = {}
-      opts[:durability_filter] = durability_filter.to_s if durability_filter
-      opts[:dirty] = dirty unless dirty.nil?
-      opts[:read_ahead_bytes] = read_ahead_bytes if read_ahead_bytes
-      opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
-      opts[:max_fetch_tasks] = max_fetch_tasks if max_fetch_tasks
+                    read_ahead_bytes: nil, cache_blocks: nil, max_fetch_tasks: nil,
+                    from: nil, to: nil, &)
+      opts = {
+        durability_filter: durability_filter&.to_s,
+        dirty: dirty,
+        read_ahead_bytes: read_ahead_bytes,
+        cache_blocks: cache_blocks,
+        max_fetch_tasks: max_fetch_tasks,
+        subrange_from: from,
+        subrange_to: to
+      }.compact
 
       iter = if opts.empty?
                _scan_prefix(prefix)

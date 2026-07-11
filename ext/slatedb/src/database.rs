@@ -16,7 +16,7 @@ use crate::metrics::Metrics;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
 use crate::transaction::Transaction;
-use crate::utils::{get_optional, resolve_object_store};
+use crate::utils::{get_optional, prefix_subrange_from_kwargs, resolve_object_store};
 use crate::write_batch::WriteBatch;
 
 /// Ruby wrapper for SlateDB database.
@@ -467,7 +467,7 @@ impl Database {
         let opts = ScanOptions::default();
         let iter = block_on_result(async {
             self.inner
-                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .scan_prefix_with_options(prefix.as_bytes(), .., &opts)
                 .await
         })?;
 
@@ -534,9 +534,10 @@ impl Database {
             };
         }
 
+        let subrange = prefix_subrange_from_kwargs(&kwargs)?;
         let iter = block_on_result(async {
             self.inner
-                .scan_prefix_with_options(prefix.as_bytes(), &opts)
+                .scan_prefix_with_options(prefix.as_bytes(), subrange, &opts)
                 .await
         })?;
 
