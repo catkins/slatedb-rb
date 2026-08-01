@@ -53,9 +53,16 @@ RSpec.describe SlateDb::Reader do
       # SlateDB 0.15.0 replaced the reader's Option<checkpoint_id> with an explicit
       # DbReaderMode. follow_latest selects DbReaderMode::FollowLatest, which tails the
       # latest manifest without creating a checkpoint.
-      it "reads with follow_latest (SlateDB >= 0.15.0)" do
+      it "reads the latest committed state with follow_latest (SlateDB >= 0.15.0)" do
+        # Commit a newer value after the initial write from the before hook.
+        SlateDb::Database.open(@path, url: @url) do |db|
+          db.put("key", "latest")
+          db.flush
+        end
+
+        # FollowLatest follows the newest manifest, so it observes the latest write.
         SlateDb::Reader.open(@path, url: @url, follow_latest: true) do |reader|
-          expect(reader.get("key")).to eq("value")
+          expect(reader.get("key")).to eq("latest")
         end
       end
 
@@ -65,11 +72,21 @@ RSpec.describe SlateDb::Reader do
           db.put("key", "checkpointed")
           db.flush
           checkpoint = db.create_checkpoint
+          # Diverge from the checkpoint after capturing it. A reader pinned to the
+          # checkpoint must NOT observe this later write.
+          db.put("key", "after-checkpoint")
+          db.flush
         end
 
-        # A reader pinned to the checkpoint sees the state captured at creation time.
+        # Pinned to the checkpoint: sees the state captured at creation time.
         SlateDb::Reader.open(@path, url: @url, checkpoint_id: checkpoint[:id]) do |reader|
           expect(reader.get("key")).to eq("checkpointed")
+        end
+
+        # By contrast, the default (managed-checkpoint) reader follows the latest
+        # state, proving the checkpoint_id actually pinned the reader above.
+        SlateDb::Reader.open(@path, url: @url) do |reader|
+          expect(reader.get("key")).to eq("after-checkpoint")
         end
       end
 
