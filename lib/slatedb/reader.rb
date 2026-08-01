@@ -7,7 +7,14 @@ module SlateDb
       #
       # @param path [String] The path identifier for the database
       # @param url [String, nil] Optional object store URL
-      # @param checkpoint_id [String, nil] Optional checkpoint UUID to read at
+      # @param checkpoint_id [String, nil] Optional checkpoint UUID to read at. When
+      #   given, the reader is pinned to that checkpoint and does not follow new writes.
+      # @param follow_latest [Boolean, nil] When true, the reader tails the latest
+      #   manifest without creating or maintaining its own checkpoint. This performs no
+      #   object-store writes but provides no protection from garbage collection, so it
+      #   is best suited to read-only or mirrored databases. Mutually exclusive with
+      #   +checkpoint_id+. When neither is set (the default), the reader manages its own
+      #   checkpoint and refreshes it periodically. (Requires SlateDB >= 0.15.0)
       # @param manifest_poll_interval [Integer, nil] Poll interval in milliseconds
       # @param checkpoint_lifetime [Integer, nil] Checkpoint lifetime in milliseconds
       # @param max_memtable_bytes [Integer, nil] Maximum memtable size in bytes
@@ -35,16 +42,20 @@ module SlateDb
       # @example Open at a specific checkpoint
       #   reader = SlateDb::Reader.open("/tmp/mydb", checkpoint_id: "uuid-here")
       #
+      # @example Follow the latest state without managing a checkpoint
+      #   reader = SlateDb::Reader.open("/tmp/mydb", follow_latest: true)
+      #
       # @example Enable the on-disk cache and cap its open file handles
       #   reader = SlateDb::Reader.open("/tmp/mydb",
       #                                 cache_root: "/var/cache/slatedb",
       #                                 max_open_file_handles: 256)
       #
-      def open(path, url: nil, checkpoint_id: nil,
+      def open(path, url: nil, checkpoint_id: nil, follow_latest: nil,
                manifest_poll_interval: nil, checkpoint_lifetime: nil,
                max_memtable_bytes: nil, cache_root: nil, max_open_file_handles: nil,
                merge_operator: nil)
         opts = {}
+        opts[:follow_latest] = follow_latest unless follow_latest.nil?
         opts[:manifest_poll_interval] = manifest_poll_interval if manifest_poll_interval
         opts[:checkpoint_lifetime] = checkpoint_lifetime if checkpoint_lifetime
         opts[:max_memtable_bytes] = max_memtable_bytes if max_memtable_bytes

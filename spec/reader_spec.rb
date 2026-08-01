@@ -50,6 +50,43 @@ RSpec.describe SlateDb::Reader do
         end
       end
 
+      # SlateDB 0.15.0 replaced the reader's Option<checkpoint_id> with an explicit
+      # DbReaderMode. follow_latest selects DbReaderMode::FollowLatest, which tails the
+      # latest manifest without creating a checkpoint.
+      it "reads with follow_latest (SlateDB >= 0.15.0)" do
+        SlateDb::Reader.open(@path, url: @url, follow_latest: true) do |reader|
+          expect(reader.get("key")).to eq("value")
+        end
+      end
+
+      it "reads pinned to a specific checkpoint" do
+        checkpoint = nil
+        SlateDb::Database.open(@path, url: @url) do |db|
+          db.put("key", "checkpointed")
+          db.flush
+          checkpoint = db.create_checkpoint
+        end
+
+        # A reader pinned to the checkpoint sees the state captured at creation time.
+        SlateDb::Reader.open(@path, url: @url, checkpoint_id: checkpoint[:id]) do |reader|
+          expect(reader.get("key")).to eq("checkpointed")
+        end
+      end
+
+      it "rejects checkpoint_id combined with follow_latest" do
+        expect do
+          SlateDb::Reader.open(@path, url: @url,
+                                      checkpoint_id: SecureRandom.uuid,
+                                      follow_latest: true)
+        end.to raise_error(SlateDb::InvalidArgumentError, /mutually exclusive/)
+      end
+
+      it "raises on an invalid checkpoint_id" do
+        expect do
+          SlateDb::Reader.open(@path, url: @url, checkpoint_id: "not-a-uuid")
+        end.to raise_error(SlateDb::InvalidArgumentError, /invalid checkpoint_id/)
+      end
+
       it "accepts max_open_file_handles (SlateDB >= 0.13.0)" do
         SlateDb::Reader.open(@path, url: @url, max_open_file_handles: 16) do |reader|
           expect(reader.get("key")).to eq("value")
