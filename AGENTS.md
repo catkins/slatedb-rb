@@ -17,5 +17,7 @@ Release pipeline notes:
 
 - The Buildkite release pipeline slug is `slatedb-rb-release`.
 - Keep the release pipeline non-public/private.
-- Release builds are intended to run from git tags and publish through the RubyGems OIDC API key role, not a long-lived RubyGems token.
+- Release builds are intended to run from git tags (`vX.Y.Z`) and publish through the RubyGems OIDC API key role, not a long-lived RubyGems token.
+- Tag must match `SlateDb::VERSION` in `lib/slatedb/version.rb` (`release:verify-tag` enforces this).
 - Use `mise run release:build-gem` with `RELEASE_PLATFORM` for native gem builds.
+- Publish a generic `ruby` platform gem plus native gems; set `DRY_RUN=true` (or trigger a manual untagged build) to exercise packaging without publishing.

@@ -44,6 +44,20 @@ mise run clippy
 mise run rubocop
 """
 
+[tasks."release:verify-tag"]
+description = "Fail unless the git tag (BUILDKITE_TAG) matches SlateDb::VERSION"
+run = """
+tag="${BUILDKITE_TAG:-}"
+test -n "$tag" || { echo "No BUILDKITE_TAG set; skipping tag/version check" >&2; exit 0; }
+version="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
+expected="v${version}"
+if [ "$tag" != "$expected" ]; then
+  echo "Tag/version mismatch: tag '$tag' but version.rb is '$version' (expected tag '$expected')" >&2
+  exit 1
+fi
+echo "OK: tag '$tag' matches version.rb ('$version')"
+"""
+
 [tasks."release:build-gem"]
 description = "Cross-compile a native gem for RELEASE_PLATFORM"
 run = """
@@ -53,6 +67,14 @@ test -n "${RELEASE_PLATFORM:-}" || {
 }
 
 bundle exec rb-sys-dock --platform "$RELEASE_PLATFORM" --ruby-versions "3.3,3.4,4.0" --build
+"""
+depends = ["deps"]
+
+[tasks."release:build-ruby-gem"]
+description = "Build the generic ruby-platform gem"
+run = """
+rm -f pkg/*.gem
+bundle exec rake build
 """
 depends = ["deps"]
 
@@ -70,7 +92,8 @@ if [ -z "$gem_file" ] || [ ! -f "$gem_file" ]; then
   exit 1
 fi
 
-gem install "$gem_file" --local --no-document
+# Allow RubyGems to resolve runtime deps (e.g. rb_sys) on a clean agent.
+gem install "$gem_file" --no-document
 smoke_dir="$(mktemp -d)"
 cd "$smoke_dir"
 ruby -rslatedb -e 'puts SlateDb::VERSION'

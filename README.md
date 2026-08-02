@@ -8,10 +8,6 @@ Ruby bindings for [SlateDB](https://slatedb.io), a cloud-native embedded key-val
 
 These bindings are still in early development, and while SlateDB itself is used in Production, these bindings have yet to be. Contributions are welcome!
 
-### TODO
-
-- [ ] Cross-compile native extensions
-
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -32,8 +28,7 @@ Or install it yourself as:
 gem install slatedb
 ```
 
-> [!IMPORTANT]
-> This gem currently requires a working Rust toolchain to install until the dependencies are cross-compiled.
+Precompiled native gems are published for common Linux and Darwin platforms. Building from source still requires a Rust toolchain.
 
 ## Usage
 
@@ -635,6 +630,39 @@ Exception hierarchy:
 
 - Ruby 3.3+
 - Rust toolchain (for building from source)
+
+## Releasing
+
+Releases publish a generic `ruby` platform gem and **precompiled native gems**
+for six platforms (`x86_64-linux`, `aarch64-linux`, `x86_64-linux-musl`,
+`aarch64-linux-musl`, `arm64-darwin`, `x86_64-darwin`) to
+[rubygems.org](https://rubygems.org/gems/slatedb). The generic gem keeps
+RubyGems' latest-version metadata aligned; supported platforms should still
+resolve to their matching precompiled native gem.
+
+### Cutting a release
+
+The gem version comes from `lib/slatedb/version.rb`, not from the tag, so bump the
+file and tag the same version:
+
+```bash
+# 1. Bump SlateDb::VERSION in lib/slatedb/version.rb (e.g. "0.4.3")
+# 2. Commit the bump
+git add lib/slatedb/version.rb
+git commit -m "Release v0.4.3"
+
+# 3. Tag that commit (the v-prefix triggers the release pipeline)
+git tag v0.4.3
+git push origin main
+git push origin v0.4.3
+```
+
+The `release:verify-tag` step fails the build if the tag and
+`SlateDb::VERSION` disagree, so the tag (`v0.4.3`) must match `version.rb`
+(`0.4.3`).
+
+To exercise packaging without publishing, trigger a manual build on the
+`slatedb-rb-release` pipeline or set `DRY_RUN=true`.
 
 ## Development
 
