@@ -7,6 +7,9 @@ env:
   MISE_GITHUB_ATTESTATIONS: "false"
   MISE_RUBY_GITHUB_ATTESTATIONS: "false"
 
+common_mise_plugin: &mise_plugin
+  version: 2026.6.6
+
 steps:
   - group: ":ruby: Build & Test"
     steps:
@@ -15,26 +18,26 @@ steps:
         env:
           MISE_ENV: ruby-3.3
         plugins:
-          - mise#v1.1.4: ~
+          - mise#v1.1.4: *mise_plugin
 
       - label: ":ruby: Ruby 3.4"
         command: mise run ci:test
         env:
           MISE_ENV: ruby-3.4
         plugins:
-          - mise#v1.1.4: ~
+          - mise#v1.1.4: *mise_plugin
 
       - label: ":ruby: Ruby 4.0"
         command: mise run ci:test
         plugins:
-          - mise#v1.1.4: ~
+          - mise#v1.1.4: *mise_plugin
 
   - label: ":rubocop: Lint"
     command: mise run ci:rubocop
     plugins:
-      - mise#v1.1.4: ~
+      - mise#v1.1.4: *mise_plugin
 
   - label: ":rust: Cargo Check & Clippy"
     command: mise run ci:clippy
     plugins:
-      - mise#v1.1.4: ~
+      - mise#v1.1.4: *mise_plugin

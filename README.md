@@ -642,20 +642,18 @@ resolve to their matching precompiled native gem.
 
 ### Cutting a release
 
-The gem version comes from `lib/slatedb/version.rb`, not from the tag, so bump the
-file and tag the same version:
+The gem version comes from `lib/slatedb/version.rb`, not from the tag. Use the
+mise helper to bump, commit, tag, and push in one step (must be on `main` with a
+clean working tree):
 
 ```bash
-# 1. Bump SlateDb::VERSION in lib/slatedb/version.rb (e.g. "0.4.3")
-# 2. Commit the bump
-git add lib/slatedb/version.rb
-git commit -m "Release v0.4.3"
-
-# 3. Tag that commit (the v-prefix triggers the release pipeline)
-git tag v0.4.3
-git push origin main
-git push origin v0.4.3
+mise run release:cut 0.4.3
+# or: mise run release:cut 0.4.3 -- --no-push
 ```
+
+That updates `SlateDb::VERSION`, commits `Release v0.4.3`, creates tag `v0.4.3`,
+and pushes the commit + tag (unless `--no-push`). The tag triggers the release
+pipeline.
 
 The `release:verify-tag` step fails the build if the tag and
 `SlateDb::VERSION` disagree, so the tag (`v0.4.3`) must match `version.rb`
