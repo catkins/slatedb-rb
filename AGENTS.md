@@ -13,6 +13,27 @@ Use mise for the project toolchain and common commands:
 - `mise run test`
 - `mise run lint`
 
+## Cursor Cloud / sandbox setup
+
+Cloud Agents boot from a configured environment and then run the `install`
+script in `.cursor/environment.json`, which bootstraps everything this repo
+needs:
+
+- Installs `mise` if it is missing (`curl https://mise.run | sh`).
+- Runs `mise install` to provision the Ruby and Rust toolchains pinned in `.mise.toml`.
+- Runs `mise run ci:install-system-deps` for native build packages (`libclang-dev`).
+- Runs `mise run deps` (`bundle install`) for gem dependencies.
+
+If a shell starts without `mise` on `PATH`, activate it first:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+eval "$(mise activate bash)"
+```
+
+Prefer baking `mise` and the system packages into the environment snapshot so
+each boot only refreshes commit-sensitive dependencies.
+
 Release pipeline notes:
 
 - The Buildkite release pipeline slug is `slatedb-rb-release`.
