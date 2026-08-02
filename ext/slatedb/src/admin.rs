@@ -253,6 +253,8 @@ impl Admin {
                 compactions_options: default_opts.compactions_options,
                 detach_options: default_opts.detach_options,
                 metric_level: default_opts.metric_level,
+                boundary_files_enabled: default_opts.boundary_files_enabled,
+                object_store_max_retries: default_opts.object_store_max_retries,
             }
         };
 

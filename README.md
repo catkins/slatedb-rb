@@ -508,10 +508,21 @@ SlateDb::Reader.open("/tmp/mydb", url: "s3://bucket/path") do |reader|
   end
 end
 
-# Open at a specific checkpoint
+# Open at a specific checkpoint (pins the reader to that checkpoint's state)
 SlateDb::Reader.open("/tmp/mydb", 
                      url: "s3://bucket/path",
                      checkpoint_id: "uuid-here") do |reader|
+  reader.get("key")
+end
+
+# Follow the latest state without managing a checkpoint (SlateDB >= 0.15.0).
+# This performs no object-store writes but offers no protection from garbage
+# collection, so it suits read-only or mirrored databases. By default (neither
+# checkpoint_id nor follow_latest set) the reader creates and periodically
+# refreshes its own checkpoint instead.
+SlateDb::Reader.open("/tmp/mydb",
+                     url: "s3://bucket/path",
+                     follow_latest: true) do |reader|
   reader.get("key")
 end
 

@@ -4,6 +4,7 @@ use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{DbReaderOptions, DurabilityLevel, ReadOptions, ScanOptions};
 use slatedb::DbReader;
+use slatedb::DbReaderMode;
 use slatedb::IterationOrder;
 
 use crate::errors::invalid_argument_error;
@@ -26,11 +27,20 @@ impl Reader {
     /// # Arguments
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL
-    /// * `checkpoint_id` - Optional checkpoint UUID to read at
+    /// * `checkpoint_id` - Optional checkpoint UUID to read at. When set, the reader
+    ///   is pinned to that checkpoint ([`DbReaderMode::Checkpoint`]).
     /// * `kwargs` - Additional options (manifest_poll_interval, checkpoint_lifetime,
-    ///   max_memtable_bytes, skip_wal_replay, cache_root, max_open_file_handles).
+    ///   max_memtable_bytes, skip_wal_replay, cache_root, max_open_file_handles,
+    ///   follow_latest).
     ///   The local disk cache (and therefore `max_open_file_handles`) is only active
     ///   when `cache_root` is set.
+    ///
+    ///   When neither `checkpoint_id` nor `follow_latest` is given the reader defaults
+    ///   to [`DbReaderMode::ManagedCheckpoint`], creating and periodically refreshing
+    ///   its own checkpoint so garbage collection cannot delete objects out from under
+    ///   it. Setting `follow_latest: true` selects [`DbReaderMode::FollowLatest`], which
+    ///   tails the latest manifest without writing any checkpoint — useful for read-only
+    ///   or mirrored databases, at the cost of no protection from garbage collection.
     pub fn open(
         path: String,
         url: Option<String>,
@@ -46,16 +56,24 @@ impl Reader {
         let skip_wal_replay = get_optional::<bool>(&kwargs, "skip_wal_replay")?;
         let max_open_file_handles = get_optional::<usize>(&kwargs, "max_open_file_handles")?;
         let cache_root = get_optional::<String>(&kwargs, "cache_root")?;
+        let follow_latest = get_optional::<bool>(&kwargs, "follow_latest")?.unwrap_or(false);
 
-        // Parse checkpoint_id as UUID
-        let checkpoint_uuid =
-            if let Some(id_str) = checkpoint_id {
-                Some(uuid::Uuid::parse_str(&id_str).map_err(|e| {
+        // Resolve the reader mode from checkpoint_id / follow_latest.
+        let mode = match checkpoint_id {
+            Some(id_str) => {
+                if follow_latest {
+                    return Err(invalid_argument_error(
+                        "checkpoint_id and follow_latest are mutually exclusive",
+                    ));
+                }
+                let uuid = uuid::Uuid::parse_str(&id_str).map_err(|e| {
                     invalid_argument_error(&format!("invalid checkpoint_id: {}", e))
-                })?)
-            } else {
-                None
-            };
+                })?;
+                DbReaderMode::Checkpoint(uuid)
+            }
+            None if follow_latest => DbReaderMode::FollowLatest,
+            None => DbReaderMode::ManagedCheckpoint,
+        };
 
         let reader = block_on_result(async {
             let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
@@ -85,7 +103,7 @@ impl Reader {
             if let Some(max_handles) = max_open_file_handles {
                 options.object_store_cache_options.max_open_file_handles = max_handles;
             }
-            DbReader::open(path, object_store, checkpoint_uuid, options).await
+            DbReader::open(path, object_store, mode, options).await
         })?;
 
         Ok(Self {
