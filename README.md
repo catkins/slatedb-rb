@@ -648,7 +648,7 @@ clean working tree):
 
 ```bash
 mise run release:cut 0.4.3
-# or: mise run release:cut 0.4.3 -- --no-push
+# or: mise run release:cut 0.4.3 --no-push
 ```
 
 That updates `SlateDb::VERSION`, commits `Release v0.4.3`, creates tag `v0.4.3`,
