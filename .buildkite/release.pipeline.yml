@@ -37,12 +37,17 @@ steps:
         plugins:
           - mise#v1.1.4: *mise_plugin
 
+  # RubyGems gem-level "latest" follows the ruby-platform version. Native-only
+  # releases leave the previous ruby gem as latest (as happened with 0.4.2).
   - label: ":package: ruby gem"
     key: ruby-gem
     command: |
+      set -euo pipefail
       mise run release:build-ruby-gem
       version="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
-      buildkite-agent artifact upload "pkg/slatedb-${version}.gem"
+      gem_file="pkg/slatedb-${version}.gem"
+      test -f "$gem_file"
+      buildkite-agent artifact upload "$gem_file"
     plugins:
       - mise#v1.1.4: *mise_plugin
 
@@ -57,14 +62,19 @@ steps:
     plugins:
       - mise#v1.1.4: *mise_plugin
 
-  - wait: ~
-
   # Publish only runs on a real version tag AND when not a dry run.
   # Trigger a manual build (no tag) or set DRY_RUN=true to exercise the
   # cross-compile + smoke steps without publishing to rubygems.org.
+  # Explicit depends_on ensures the ruby-platform gem is present before push.
   - label: ":rubygems: Publish"
+    key: publish
+    depends_on:
+      - native-gems
+      - ruby-gem
+      - macos-smoke
     if: build.tag != null && build.env("DRY_RUN") != "true"
     command: |
+      set -euo pipefail
       buildkite-agent artifact download "pkg/*.gem" .
       ls -lh pkg/*.gem
       mise run release:publish-gems

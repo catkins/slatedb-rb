@@ -68,9 +68,30 @@ depends = ["deps"]
 
 [tasks."release:build-ruby-gem"]
 description = "Build the generic ruby-platform gem"
+shell = "bash -c"
 run = """
-rm -f pkg/*.gem
-bundle exec rake build
+set -euo pipefail
+rm -rf pkg
+mkdir -p pkg
+
+# Prefer gem build over rake build so we always get the pure ruby-platform
+# source gem (required for RubyGems gem-level latest metadata).
+gem build slatedb.gemspec --output "pkg/slatedb-build.gem"
+
+version="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
+gem_file="pkg/slatedb-${version}.gem"
+mv -f pkg/slatedb-build.gem "$gem_file"
+
+ruby -e '
+require "rubygems/package"
+path = ARGV.fetch(0)
+spec = Gem::Package.new(path).spec
+unless spec.platform == Gem::Platform::RUBY
+  warn "Expected ruby platform gem, got #{spec.platform.inspect} in #{path}"
+  exit 1
+end
+puts "OK: #{path} platform=#{spec.platform} version=#{spec.version}"
+' "$gem_file"
 """
 depends = ["deps"]
 
@@ -88,15 +109,50 @@ ruby -rslatedb -e 'puts SlateDb::VERSION'
 
 [tasks."release:publish-gems"]
 description = "Publish pre-built gems from pkg/ to RubyGems"
+shell = "bash -c"
 run = """
+set -euo pipefail
 test -n "${GEM_HOST_API_KEY:-}" || { echo "GEM_HOST_API_KEY is required" >&2; exit 1; }
-found_gem=0
-for gem_file in pkg/*.gem; do
-  [ -e "$gem_file" ] || continue
-  found_gem=1
+
+version="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
+required=(
+  "pkg/slatedb-${version}.gem"
+  "pkg/slatedb-${version}-x86_64-linux.gem"
+  "pkg/slatedb-${version}-aarch64-linux.gem"
+  "pkg/slatedb-${version}-x86_64-linux-musl.gem"
+  "pkg/slatedb-${version}-aarch64-linux-musl.gem"
+  "pkg/slatedb-${version}-arm64-darwin.gem"
+  "pkg/slatedb-${version}-x86_64-darwin.gem"
+)
+
+missing=0
+for gem_file in "${required[@]}"; do
+  if [ ! -f "$gem_file" ]; then
+    echo "Missing required gem before publish: $gem_file" >&2
+    missing=1
+  fi
+done
+if [ "$missing" -ne 0 ]; then
+  echo "Present gems:" >&2
+  ls -lh pkg/*.gem >&2 || true
+  exit 1
+fi
+
+ruby -e '
+require "rubygems/package"
+path = ARGV.fetch(0)
+spec = Gem::Package.new(path).spec
+unless spec.platform == Gem::Platform::RUBY
+  warn "RubyGems latest metadata requires a ruby-platform gem; got #{spec.platform.inspect} in #{path}"
+  exit 1
+end
+puts "OK: ruby-platform gem present (#{path})"
+' "pkg/slatedb-${version}.gem"
+
+for gem_file in "${required[@]}"; do
+  echo "Pushing ${gem_file}"
   gem push "$gem_file"
 done
-if [ "$found_gem" -eq 0 ]; then echo "No gems found in pkg/" >&2; exit 1; fi
 """
 depends = ["deps"]
 
