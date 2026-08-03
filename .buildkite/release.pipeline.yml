@@ -39,15 +39,13 @@ steps:
 
   # RubyGems gem-level "latest" follows the ruby-platform version. Native-only
   # releases leave the previous ruby gem as latest (as happened with 0.4.2).
+  # The task wipes pkg/ and asserts the built gem is ruby-platform, so a bare
+  # glob is unambiguous here and avoids Buildkite interpolating shell variables.
   - label: ":package: ruby gem"
     key: ruby-gem
     command: |
-      set -euo pipefail
       mise run release:build-ruby-gem
-      version="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
-      gem_file="pkg/slatedb-${version}.gem"
-      test -f "$gem_file"
-      buildkite-agent artifact upload "$gem_file"
+      buildkite-agent artifact upload "pkg/*.gem"
     plugins:
       - mise#v1.1.4: *mise_plugin
 
@@ -74,7 +72,6 @@ steps:
       - macos-smoke
     if: build.tag != null && build.env("DRY_RUN") != "true"
     command: |
-      set -euo pipefail
       buildkite-agent artifact download "pkg/*.gem" .
       ls -lh pkg/*.gem
       mise run release:publish-gems
