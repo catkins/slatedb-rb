@@ -1,0 +1,3 @@
+{
+  "install": "command -v mise >/dev/null 2>&1 || { curl -fsSL https://mise.run | sh; }; export PATH=\"$HOME/.local/bin:$PATH\"; mise install && mise run ci:install-system-deps && mise run deps"
+}

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+#MISE description="Bump version.rb, commit, tag, and push to trigger the release pipeline"
+#USAGE arg "<version>" help="Version to release (e.g. 0.4.3 or v0.4.3)"
+#USAGE flag "--no-push" help="Commit and tag locally without pushing"
+
+set -euo pipefail
+
+cd "${MISE_PROJECT_ROOT:-.}"
+
+raw_version="${usage_version:?version is required}"
+version="${raw_version#v}"
+tag="v${version}"
+no_push="${usage_no_push:-false}"
+version_file="lib/slatedb/version.rb"
+
+case "$version" in
+  ''|*[!0-9a-zA-Z.+-]*)
+    echo "Invalid version: '$raw_version'" >&2
+    exit 1
+    ;;
+esac
+
+if ! ruby -e 'v=ARGV[0]; abort("bad") unless v.match?(/\A\d+\.\d+(\.\d+)?([.-].+)?\z/)' "$version"; then
+  echo "Version must look like X.Y or X.Y.Z (got '$version')" >&2
+  exit 1
+fi
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Not inside a git repository" >&2
+  exit 1
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Working tree is dirty; commit or stash changes before cutting a release" >&2
+  git status --short >&2
+  exit 1
+fi
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$no_push" != "true" ] && [ "$branch" != "main" ]; then
+  echo "Refusing to push a release from branch '$branch' (expected main). Re-run with --no-push to only commit/tag locally." >&2
+  exit 1
+fi
+
+current="$(ruby -r ./lib/slatedb/version -e 'print SlateDb::VERSION')"
+if [ "$current" = "$version" ]; then
+  echo "version.rb is already $version" >&2
+  exit 1
+fi
+
+if git rev-parse "$tag" >/dev/null 2>&1; then
+  echo "Tag '$tag' already exists" >&2
+  exit 1
+fi
+
+ruby -e '
+path = ARGV.fetch(0)
+version = ARGV.fetch(1)
+content = File.read(path)
+unless content.sub!(/VERSION = "[^"]*"/, %(VERSION = "#{version}"))
+  warn "Could not find VERSION assignment in #{path}"
+  exit 1
+end
+File.write(path, content)
+' "$version_file" "$version"
+
+git add -- "$version_file"
+git commit -m "Release ${tag}"
+git tag "$tag"
+
+echo "Created commit and tag ${tag} (was ${current})"
+
+if [ "$no_push" = "true" ]; then
+  echo "Skipping push (--no-push). When ready:"
+  echo "  git push origin ${branch}"
+  echo "  git push origin ${tag}"
+  exit 0
+fi
+
+git push origin HEAD
+git push origin "$tag"
+echo "Pushed ${branch} and ${tag}; release pipeline should start from the tag"
