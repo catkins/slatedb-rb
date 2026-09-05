@@ -81,6 +81,24 @@ RSpec.describe SlateDb::Database do
       end
     end
 
+    # Smoke tests that both await_durable values are accepted and the write is
+    # visible. The durability *behaviour* (that await_durable: true actually
+    # persists before the write returns) is exercised in spec/close_spec.rb,
+    # which needs a persistent store to observe it across a reopen.
+    it "accepts await_durable: true" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("durable-key", "durable-value", await_durable: true)
+        expect(db.get("durable-key")).to eq("durable-value")
+      end
+    end
+
+    it "accepts await_durable: false" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("async-key", "async-value", await_durable: false)
+        expect(db.get("async-key")).to eq("async-value")
+      end
+    end
+
     it "raises InvalidArgumentError for empty keys on put" do
       SlateDb::Database.open(tmpdir) do |db|
         expect { db.put("", "value") }.to raise_error(SlateDb::InvalidArgumentError)

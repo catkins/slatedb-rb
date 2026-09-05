@@ -265,6 +265,29 @@ impl Admin {
 
         Ok(())
     }
+
+    /// Delete the database at this admin handle's path.
+    ///
+    /// Deleting strips any checkpoints this database pinned in parent databases
+    /// (for clones) before removing its own objects. It works for plain and
+    /// cloned databases alike.
+    ///
+    /// Without `confirm` this is a dry run: it returns every object path it
+    /// *would* delete and touches nothing. Pass `confirm: true` to actually
+    /// delete. A confirmed delete of a directory that is neither a SlateDB
+    /// database nor a partially-deleted one is refused, so a mistaken path
+    /// cannot wipe an unrelated directory. The operation is idempotent.
+    ///
+    /// # Arguments
+    /// * `confirm` - When `true`, perform the deletion; when `false` (the
+    ///   default), only report what would be deleted.
+    ///
+    /// # Returns
+    /// An array of object paths that were (or, for a dry run, would be) deleted.
+    pub fn delete_db(&self, confirm: bool) -> Result<Vec<String>, Error> {
+        let deleted = block_on_result(async { self.inner.delete_db(confirm).await })?;
+        Ok(deleted)
+    }
 }
 
 /// Define the Admin class on the SlateDb module.
@@ -282,6 +305,7 @@ pub fn define_admin_class(ruby: &Ruby, module: &magnus::RModule) -> Result<(), E
     class.define_method("_refresh_checkpoint", method!(Admin::refresh_checkpoint, 2))?;
     class.define_method("_delete_checkpoint", method!(Admin::delete_checkpoint, 1))?;
     class.define_method("_run_gc", method!(Admin::run_gc, 1))?;
+    class.define_method("_delete_db", method!(Admin::delete_db, 1))?;
 
     Ok(())
 }
