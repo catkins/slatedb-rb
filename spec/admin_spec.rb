@@ -106,6 +106,67 @@ RSpec.describe SlateDb::Admin do
     end
   end
 
+  describe "#delete_db" do
+    # delete_db needs a persistent object store so the Admin handle sees the
+    # objects a separate Database handle wrote.
+    around do |example|
+      Dir.mktmpdir("slatedb-delete-db-test") do |dir|
+        @url = "file://#{dir}/store"
+        @path = "delete_db_#{SecureRandom.hex(8)}"
+        example.run
+      end
+    end
+
+    before do
+      SlateDb::Database.open(@path, url: @url) do |db|
+        db.put("keep", "me")
+        db.flush
+      end
+    end
+
+    it "returns the objects it would delete without deleting on a dry run" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      would_delete = admin.delete_db
+
+      expect(would_delete).to be_a(Array)
+      expect(would_delete).not_to be_empty
+      expect(would_delete).to all(be_a(String))
+
+      # The database is untouched by a dry run.
+      SlateDb::Database.open(@path, url: @url) do |db|
+        expect(db.get("keep")).to eq("me")
+      end
+    end
+
+    it "defaults to a dry run when confirm is not given" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      expect { admin.delete_db }.not_to raise_error
+
+      SlateDb::Database.open(@path, url: @url) do |db|
+        expect(db.get("keep")).to eq("me")
+      end
+    end
+
+    it "deletes the database when confirm: true" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      deleted = admin.delete_db(confirm: true)
+
+      expect(deleted).to be_a(Array)
+      expect(deleted).not_to be_empty
+
+      # Reopening initialises a fresh database; the old data is gone.
+      SlateDb::Database.open(@path, url: @url) do |db|
+        expect(db.get("keep")).to be_nil
+      end
+    end
+
+    it "is idempotent for repeated confirmed deletes" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      admin.delete_db(confirm: true)
+      expect { admin.delete_db(confirm: true) }.not_to raise_error
+    end
+  end
+
   describe "API structure" do
     it "has the expected instance methods" do
       expect(SlateDb::Admin.instance_methods).to include(:read_manifest)
@@ -115,6 +176,7 @@ RSpec.describe SlateDb::Admin do
       expect(SlateDb::Admin.instance_methods).to include(:refresh_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:delete_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:run_gc)
+      expect(SlateDb::Admin.instance_methods).to include(:delete_db)
     end
   end
 end

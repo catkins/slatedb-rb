@@ -506,5 +506,37 @@ module SlateDb
     def metrics
       _metrics
     end
+
+    # Close the database, releasing its resources.
+    #
+    # By default the active memtable is flushed to the object store before
+    # closing so writes that are not yet durable are preserved. Pass
+    # +flush: false+ to close without that final flush, which is faster but may
+    # drop writes that had not yet become durable — useful for read-only or
+    # disposable databases.
+    #
+    # @param flush [Boolean] Whether to flush before closing (default: true)
+    # @param flush_type [Symbol, String, nil] Which in-memory structure to flush
+    #   before closing: :memtable (default) or :wal. Ignored when flush is false.
+    # @return [void]
+    #
+    # @example Close and flush (default)
+    #   db.close
+    #
+    # @example Close without flushing the active memtable
+    #   db.close(flush: false)
+    #
+    # @example Flush the WAL instead of the memtable before closing
+    #   db.close(flush_type: :wal)
+    #
+    def close(flush: true, flush_type: nil)
+      if flush && flush_type.nil?
+        _close
+      else
+        opts = { flush: flush }
+        opts[:flush_type] = flush_type.to_s if flush_type
+        _close_with_options(opts)
+      end
+    end
   end
 end

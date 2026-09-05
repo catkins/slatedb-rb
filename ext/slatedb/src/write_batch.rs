@@ -49,7 +49,7 @@ impl WriteBatch {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let put_opts = PutOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
@@ -102,7 +102,7 @@ impl WriteBatch {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let merge_opts = MergeOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
