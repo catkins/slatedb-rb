@@ -118,5 +118,28 @@ module SlateDb
       opts[:min_age] = min_age if min_age
       _run_gc(opts)
     end
+
+    # Delete the database, stripping any checkpoints it pinned in parent
+    # databases before removing its own objects.
+    #
+    # By default this performs a dry run: it returns the list of object paths
+    # that *would* be deleted without touching anything. Pass <tt>confirm:
+    # true</tt> to actually delete the data. The operation is idempotent, so a
+    # rerun after a crash finishes the job.
+    #
+    # @param confirm [Boolean] When false (default) perform a dry run and only
+    #   report what would be deleted. When true, delete the objects.
+    # @return [Array<String>] Object paths that were deleted (or, for a dry
+    #   run, that would be deleted)
+    #
+    # @example Preview what would be deleted
+    #   admin.delete_db.each { |path| puts path }
+    #
+    # @example Actually delete the database
+    #   admin.delete_db(confirm: true)
+    #
+    def delete_db(confirm: false)
+      _delete_db(confirm)
+    end
   end
 end

@@ -109,7 +109,7 @@ impl Transaction {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let put_opts = PutOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
@@ -172,7 +172,7 @@ impl Transaction {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let merge_opts = MergeOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
@@ -395,7 +395,15 @@ impl Transaction {
             .take()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        block_on_result(async { txn.commit().await })?;
+        // Preserve the pre-0.16.0 default of awaiting durability on commit: the
+        // crate no longer waits for durability inside `commit`, so await the
+        // returned handle (absent for an empty/read-only transaction).
+        block_on_result(async {
+            if let Some(handle) = txn.commit().await? {
+                handle.await_durable().await?;
+            }
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -403,10 +411,7 @@ impl Transaction {
     pub fn commit_with_options(&self, kwargs: RHash) -> Result<(), Error> {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let seqnum = get_optional::<u64>(&kwargs, "seqnum")?.unwrap_or(0);
-        let write_opts = WriteOptions {
-            await_durable,
-            seqnum,
-        };
+        let write_opts = WriteOptions { seqnum };
 
         let txn = self
             .inner
@@ -414,7 +419,19 @@ impl Transaction {
             .take()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        block_on_result(async { txn.commit_with_options(&write_opts).await })?;
+        // As of SlateDB 0.16.0 durability is awaited via the returned
+        // `WriteHandle` rather than a `WriteOptions.await_durable` field. An
+        // empty/read-only transaction commits to `None`, in which case there is
+        // nothing to await.
+        block_on_result(async {
+            let handle = txn.commit_with_options(&write_opts).await?;
+            if await_durable {
+                if let Some(handle) = handle {
+                    handle.await_durable().await?;
+                }
+            }
+            Ok(())
+        })?;
         Ok(())
     }
 

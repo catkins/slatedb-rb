@@ -175,6 +175,57 @@ RSpec.describe SlateDb::Database do
       db.put("key", "value")
       expect { db.close }.not_to raise_error
     end
+
+    it "closes with an explicit memtable flush" do
+      db = SlateDb::Database.open(tmpdir)
+      db.put("key", "value")
+      expect { db.close(flush: :memtable) }.not_to raise_error
+    end
+
+    it "closes with a WAL flush" do
+      db = SlateDb::Database.open(tmpdir)
+      db.put("key", "value")
+      expect { db.close(flush: :wal) }.not_to raise_error
+    end
+
+    it "closes without a final flush" do
+      db = SlateDb::Database.open(tmpdir)
+      db.put("key", "value")
+      db.flush
+      expect { db.close(flush: :none) }.not_to raise_error
+    end
+
+    it "treats a nil flush as the default (memtable)" do
+      db = SlateDb::Database.open(tmpdir)
+      db.put("key", "value")
+      expect { db.close(flush: nil) }.not_to raise_error
+    end
+
+    it "raises ArgumentError for an invalid flush symbol" do
+      db = SlateDb::Database.open(tmpdir)
+      expect { db.close(flush: :bogus) }.to raise_error(ArgumentError, /invalid flush/)
+    ensure
+      db&.close(flush: :none)
+    end
+
+    it "raises ArgumentError for a non-symbol flush value" do
+      db = SlateDb::Database.open(tmpdir)
+      expect { db.close(flush: 5) }.to raise_error(ArgumentError, /invalid flush/)
+    ensure
+      db&.close(flush: :none)
+    end
+
+    it "persists a memtable-flushed close across reopens" do
+      file_url = "file://#{tmpdir}"
+
+      db = SlateDb::Database.open(tmpdir, url: file_url)
+      db.put("closed_key", "closed_value")
+      db.close(flush: :memtable)
+
+      SlateDb::Database.open(tmpdir, url: file_url) do |reopened|
+        expect(reopened.get("closed_key")).to eq("closed_value")
+      end
+    end
   end
 
   describe "persistence with local file URL" do
@@ -190,6 +241,45 @@ RSpec.describe SlateDb::Database do
       # Read data in new session
       SlateDb::Database.open(tmpdir, url: file_url) do |db|
         expect(db.get("persistent_key")).to eq("persistent_value")
+      end
+    end
+  end
+
+  describe "write durability options" do
+    # As of SlateDB 0.16.0 durability is awaited via the WriteHandle returned
+    # by each write rather than a WriteOptions field. These specs assert the
+    # Ruby-facing `await_durable:` keyword keeps working across every write path.
+    it "accepts await_durable: false on put and remains readable after flush" do
+      SlateDb::Database.open(tmpdir) do |db|
+        expect { db.put("dk", "dv", await_durable: false) }.not_to raise_error
+        db.flush
+        expect(db.get("dk")).to eq("dv")
+      end
+    end
+
+    it "accepts await_durable: false on delete" do
+      SlateDb::Database.open(tmpdir) do |db|
+        db.put("dk", "dv")
+        expect { db.delete("dk", await_durable: false) }.not_to raise_error
+        db.flush
+        expect(db.get("dk")).to be_nil
+      end
+    end
+
+    it "accepts await_durable: false on a batch write" do
+      SlateDb::Database.open(tmpdir) do |db|
+        batch = SlateDb::WriteBatch.new
+        batch.put("bk", "bv")
+        expect { db.write(batch, await_durable: false) }.not_to raise_error
+        db.flush
+        expect(db.get("bk")).to eq("bv")
+      end
+    end
+
+    it "defaults put to awaiting durability" do
+      SlateDb::Database.open(tmpdir) do |db|
+        expect { db.put("dk", "dv") }.not_to raise_error
+        expect(db.get("dk")).to eq("dv")
       end
     end
   end
