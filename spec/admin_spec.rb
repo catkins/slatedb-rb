@@ -106,6 +106,61 @@ RSpec.describe SlateDb::Admin do
     end
   end
 
+  describe "#delete_db" do
+    around do |example|
+      Dir.mktmpdir("slatedb-admin-delete") do |dir|
+        @dir = dir
+        @url = "file://#{dir}"
+        example.run
+      end
+    end
+
+    def seed_database
+      SlateDb::Database.open(@dir, url: @url) do |db|
+        db.put("k1", "v1")
+        db.put("k2", "v2")
+      end
+    end
+
+    def db_files
+      Dir.glob(File.join(@dir, "**", "*")).select { |f| File.file?(f) }
+    end
+
+    it "performs a dry run by default without deleting anything" do
+      seed_database
+      files_before = db_files
+      expect(files_before).not_to be_empty
+
+      admin = SlateDb::Admin.new(@dir, url: @url)
+      would_delete = admin.delete_db
+
+      expect(would_delete).to be_an(Array)
+      expect(would_delete).not_to be_empty
+      # Nothing should actually have been removed.
+      expect(db_files).to match_array(files_before)
+    end
+
+    it "deletes the database when confirm: true" do
+      seed_database
+      expect(db_files).not_to be_empty
+
+      admin = SlateDb::Admin.new(@dir, url: @url)
+      deleted = admin.delete_db(confirm: true)
+
+      expect(deleted).to be_an(Array)
+      expect(db_files).to be_empty
+    end
+
+    it "is idempotent when the database is already gone" do
+      seed_database
+      admin = SlateDb::Admin.new(@dir, url: @url)
+      admin.delete_db(confirm: true)
+
+      expect { admin.delete_db(confirm: true) }.not_to raise_error
+      expect(db_files).to be_empty
+    end
+  end
+
   describe "API structure" do
     it "has the expected instance methods" do
       expect(SlateDb::Admin.instance_methods).to include(:read_manifest)
@@ -115,6 +170,7 @@ RSpec.describe SlateDb::Admin do
       expect(SlateDb::Admin.instance_methods).to include(:refresh_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:delete_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:run_gc)
+      expect(SlateDb::Admin.instance_methods).to include(:delete_db)
     end
   end
 end

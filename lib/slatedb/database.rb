@@ -506,5 +506,40 @@ module SlateDb
     def metrics
       _metrics
     end
+
+    # Valid values for the +flush+ option of {#close}.
+    CLOSE_FLUSH_TYPES = %i[memtable wal none].freeze
+    private_constant :CLOSE_FLUSH_TYPES
+
+    # Close the database.
+    #
+    # By default the active memtable is frozen and flushed to L0 before closing,
+    # so the WAL does not need to be replayed on the next startup. The +flush+
+    # option controls this final flush.
+    #
+    # @param flush [Symbol, nil] The flush to perform before closing. One of:
+    #   - +:memtable+ (default) - flush memtables to L0.
+    #   - +:wal+ - flush the WAL only.
+    #   - +:none+ - skip the final flush. Writes that are not yet durable may be
+    #     lost.
+    #   A +nil+ value is treated as the default (+:memtable+); skipping the flush
+    #   must be requested explicitly with +:none+.
+    # @return [void]
+    #
+    # @example Default close (memtable flush)
+    #   db.close
+    #
+    # @example Close without a final flush
+    #   db.close(flush: :none)
+    #
+    def close(flush: :memtable)
+      flush_type = flush.nil? ? :memtable : flush.to_s.to_sym
+      unless CLOSE_FLUSH_TYPES.include?(flush_type)
+        raise ArgumentError,
+              "invalid flush: #{flush.inspect} (expected one of #{CLOSE_FLUSH_TYPES.join(", ")})"
+      end
+
+      _close_with_options(flush_type.to_s)
+    end
   end
 end

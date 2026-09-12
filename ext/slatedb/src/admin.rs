@@ -265,6 +265,29 @@ impl Admin {
 
         Ok(())
     }
+
+    /// Delete a database, stripping any checkpoints it pinned in parent
+    /// databases before removing its own objects.
+    ///
+    /// # Arguments
+    /// * `confirm` - When false (the default) this is a dry run that returns
+    ///   every object path it *would* delete without touching anything. When
+    ///   true the objects are actually deleted.
+    ///
+    /// # Returns
+    /// An array of object paths that were deleted (or, for a dry run, that
+    /// would be deleted).
+    pub fn delete_db(&self, confirm: bool) -> Result<magnus::RArray, Error> {
+        let deleted = block_on_result(async { self.inner.delete_db(confirm).await })?;
+
+        let ruby = Ruby::get().expect("Ruby runtime not available");
+        let result = ruby.ary_new_capa(deleted.len());
+        for path in deleted {
+            result.push(path)?;
+        }
+
+        Ok(result)
+    }
 }
 
 /// Define the Admin class on the SlateDb module.
@@ -282,6 +305,7 @@ pub fn define_admin_class(ruby: &Ruby, module: &magnus::RModule) -> Result<(), E
     class.define_method("_refresh_checkpoint", method!(Admin::refresh_checkpoint, 2))?;
     class.define_method("_delete_checkpoint", method!(Admin::delete_checkpoint, 1))?;
     class.define_method("_run_gc", method!(Admin::run_gc, 1))?;
+    class.define_method("_delete_db", method!(Admin::delete_db, 1))?;
 
     Ok(())
 }

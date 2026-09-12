@@ -561,7 +561,16 @@ admin.run_gc(min_age: 3600_000)                 # Set min age for all directorie
 admin.run_gc(manifest_min_age: 86400_000)       # Custom age for manifest (1 day)
 admin.run_gc(wal_min_age: 60_000)               # Custom age for WAL (1 minute)
 admin.run_gc(compacted_min_age: 60_000)         # Custom age for compacted (1 minute)
+
+# Delete a database (SlateDB >= 0.16.0)
+# By default this is a dry run that lists the object paths it *would* delete.
+would_delete = admin.delete_db                  # => ["manifest/...", "wal/...", ...]
+admin.delete_db(confirm: true)                  # Actually delete; returns deleted paths
 ```
+
+`delete_db` strips any checkpoints the database pinned in parent databases (for
+clones) before removing its own objects, and it is idempotent: if a previous run
+crashed part-way through, rerunning with `confirm: true` finishes the job.
 
 ### Flushing
 
@@ -570,6 +579,19 @@ Ensure all writes are persisted:
 ```ruby
 db.put("key", "value")
 db.flush
+```
+
+### Closing
+
+Closing flushes the active memtable to L0 by default so the WAL does not need to
+be replayed on the next startup. The `flush:` option (SlateDB >= 0.16.0) controls
+the final flush:
+
+```ruby
+db.close                 # Default: flush memtables to L0
+db.close(flush: :memtable) # Same as the default, stated explicitly
+db.close(flush: :wal)      # Flush the WAL only
+db.close(flush: :none)     # Skip the final flush; non-durable writes may be lost
 ```
 
 ## Thread Safety
