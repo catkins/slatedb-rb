@@ -106,6 +106,51 @@ RSpec.describe SlateDb::Admin do
     end
   end
 
+  # delete_db was introduced in SlateDB 0.16.0. It needs a persistent
+  # (file://) object store so the Admin handle sees the objects a Database
+  # wrote.
+  describe "#delete_db" do
+    around do |example|
+      Dir.mktmpdir("slatedb-delete-db-test") do |dir|
+        @url = "file://#{dir}/store"
+        @path = "delete_db_#{SecureRandom.hex(8)}"
+        example.run
+      end
+    end
+
+    before do
+      SlateDb::Database.open(@path, url: @url) do |db|
+        db.put("key", "value")
+        db.flush
+      end
+    end
+
+    it "performs a dry run by default without deleting objects" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      would_delete = admin.delete_db
+
+      expect(would_delete).to be_an(Array)
+      expect(would_delete).not_to be_empty
+      expect(would_delete).to all(be_a(String))
+
+      # Dry run leaves the database intact: the same objects are still reported.
+      expect(admin.delete_db.size).to eq(would_delete.size)
+    end
+
+    it "deletes objects when confirm: true and is idempotent" do
+      admin = SlateDb::Admin.new(@path, url: @url)
+      deleted = admin.delete_db(confirm: true)
+
+      expect(deleted).to be_an(Array)
+      expect(deleted).not_to be_empty
+
+      # After deletion, a subsequent dry run finds nothing left to delete.
+      expect(admin.delete_db).to eq([])
+      # A repeated confirmed delete is a harmless no-op.
+      expect { admin.delete_db(confirm: true) }.not_to raise_error
+    end
+  end
+
   describe "API structure" do
     it "has the expected instance methods" do
       expect(SlateDb::Admin.instance_methods).to include(:read_manifest)
@@ -115,6 +160,7 @@ RSpec.describe SlateDb::Admin do
       expect(SlateDb::Admin.instance_methods).to include(:refresh_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:delete_checkpoint)
       expect(SlateDb::Admin.instance_methods).to include(:run_gc)
+      expect(SlateDb::Admin.instance_methods).to include(:delete_db)
     end
   end
 end

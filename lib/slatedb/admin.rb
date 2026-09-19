@@ -118,5 +118,33 @@ module SlateDb
       opts[:min_age] = min_age if min_age
       _run_gc(opts)
     end
+
+    # Delete a database, removing its objects from the object store
+    # (SlateDB >= 0.16.0).
+    #
+    # For a cloned database, any checkpoints it pinned in parent databases are
+    # stripped before its own objects are removed.
+    #
+    # By default this performs a dry run: it returns the object paths that
+    # *would* be deleted without removing anything. Pass +confirm: true+ to
+    # actually delete. A confirmed delete of a directory that is not a SlateDB
+    # database (no manifest and no in-progress deletion marker) is refused, so a
+    # mistyped path cannot wipe an unrelated directory. The operation is
+    # idempotent.
+    #
+    # @param confirm [Boolean] When false (the default), performs a dry run and
+    #   returns the paths that would be deleted. When true, deletes and returns
+    #   the paths that were removed.
+    # @return [Array<String>] Object paths deleted (or that would be deleted)
+    #
+    # @example Preview what would be deleted
+    #   admin.delete_db.each { |path| puts path }
+    #
+    # @example Actually delete the database
+    #   deleted = admin.delete_db(confirm: true)
+    #
+    def delete_db(confirm: false)
+      _delete_db(confirm)
+    end
   end
 end

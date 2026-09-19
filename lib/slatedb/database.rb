@@ -506,5 +506,63 @@ module SlateDb
     def metrics
       _metrics
     end
+
+    # Flush in-memory writes to object storage.
+    #
+    # With no arguments this flushes pending writes durably, matching the
+    # previous behavior. Pass +flush_type+ to control what is flushed
+    # (SlateDB >= 0.16.0).
+    #
+    # @param flush_type [Symbol, String, nil] Which data to flush: :wal to flush
+    #   the write-ahead log, or :memtable to freeze and flush memtable entries
+    #   to object storage. When nil (the default), SlateDB flushes the WAL if
+    #   enabled, otherwise the memtable.
+    # @return [void]
+    #
+    # @example Flush pending writes
+    #   db.flush
+    #
+    # @example Explicitly flush the WAL
+    #   db.flush(flush_type: :wal)
+    #
+    def flush(flush_type: nil)
+      if flush_type.nil?
+        _flush
+      else
+        _flush_with_options(flush_type.to_s)
+      end
+    end
+
+    # Close the database.
+    #
+    # By default the active memtable is flushed before closing (matching the
+    # previous behavior). Pass +flush: false+ to close without a final flush,
+    # in which case writes that are not yet durable may be lost
+    # (SlateDB >= 0.16.0).
+    #
+    # @param flush [Boolean] Whether to flush before closing (default: true)
+    # @param flush_type [Symbol, String, nil] When flushing, which data to
+    #   flush: :wal or :memtable. Defaults to :memtable. Ignored when
+    #   +flush: false+.
+    # @return [void]
+    #
+    # @example Close (flushing the memtable first)
+    #   db.close
+    #
+    # @example Close without flushing
+    #   db.close(flush: false)
+    #
+    # @example Flush the WAL before closing
+    #   db.close(flush_type: :wal)
+    #
+    def close(flush: true, flush_type: nil)
+      if !flush
+        _close_with_options(nil)
+      elsif flush_type.nil?
+        _close
+      else
+        _close_with_options(flush_type.to_s)
+      end
+    end
   end
 end

@@ -561,7 +561,18 @@ admin.run_gc(min_age: 3600_000)                 # Set min age for all directorie
 admin.run_gc(manifest_min_age: 86400_000)       # Custom age for manifest (1 day)
 admin.run_gc(wal_min_age: 60_000)               # Custom age for WAL (1 minute)
 admin.run_gc(compacted_min_age: 60_000)         # Custom age for compacted (1 minute)
+
+# Delete a database (SlateDB >= 0.16.0)
+would_delete = admin.delete_db                  # Dry run: returns the object paths
+                                                # that *would* be deleted, deleting nothing
+deleted = admin.delete_db(confirm: true)        # Actually delete; returns the removed paths
 ```
+
+`delete_db` is idempotent, and a confirmed delete of a directory that is not a
+SlateDB database (no manifest and no in-progress deletion marker) is refused, so
+a mistyped path cannot wipe an unrelated directory. For a cloned database, any
+checkpoints it pinned in parent databases are stripped before its own objects
+are removed.
 
 ### Flushing
 
@@ -570,6 +581,26 @@ Ensure all writes are persisted:
 ```ruby
 db.put("key", "value")
 db.flush
+```
+
+By default, `flush` flushes the write-ahead log (WAL) if enabled, otherwise the
+memtable. You can choose explicitly with `flush_type:` (SlateDB >= 0.16.0):
+
+```ruby
+db.flush(flush_type: :wal)       # Flush the write-ahead log
+db.flush(flush_type: :memtable)  # Freeze and flush memtable entries to object storage
+```
+
+### Closing
+
+Closing flushes the active memtable first by default, so durable writes are not
+lost. You can control the final flush when closing (SlateDB >= 0.16.0):
+
+```ruby
+db.close                       # Flush the memtable, then close (default)
+db.close(flush_type: :wal)     # Flush the WAL before closing
+db.close(flush: false)         # Close without a final flush; writes that are not
+                               # yet durable may be lost
 ```
 
 ## Thread Safety

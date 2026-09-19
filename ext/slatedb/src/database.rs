@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{
-    DurabilityLevel, MergeOptions, PutOptions, ReadOptions, ScanOptions, Ttl, WriteOptions,
+    CloseOptions, DurabilityLevel, FlushOptions, FlushType, MergeOptions, PutOptions, ReadOptions,
+    ScanOptions, Ttl, WriteOptions,
 };
 use slatedb::object_store::memory::InMemory;
 use slatedb::{Db, IsolationLevel, IterationOrder, KeyValue};
@@ -79,13 +80,32 @@ impl Database {
     }
 
     fn write_options_from_kwargs(kwargs: &RHash) -> Result<WriteOptions, Error> {
-        let await_durable = get_optional::<bool>(kwargs, "await_durable")?.unwrap_or(true);
         let seqnum = get_optional::<u64>(kwargs, "seqnum")?.unwrap_or(0);
 
-        Ok(WriteOptions {
-            await_durable,
-            seqnum,
-        })
+        Ok(WriteOptions { seqnum })
+    }
+
+    /// Parse the `await_durable` keyword argument (defaults to `true`).
+    ///
+    /// As of SlateDB 0.16.0, `await_durable` is no longer a `WriteOptions`
+    /// field. Write methods return immediately after updating the in-memory
+    /// WAL/MemTable and hand back a `WriteHandle`; blocking until the write is
+    /// durable in object storage is done by awaiting that handle. This helper
+    /// preserves the previous ergonomic `await_durable:` behavior for callers.
+    fn await_durable_from_kwargs(kwargs: &RHash) -> Result<bool, Error> {
+        Ok(get_optional::<bool>(kwargs, "await_durable")?.unwrap_or(true))
+    }
+
+    /// Parse a `flush_type` name into a SlateDB `FlushType` (SlateDB >= 0.16.0).
+    fn parse_flush_type(name: &str) -> Result<FlushType, Error> {
+        match name {
+            "wal" => Ok(FlushType::Wal),
+            "memtable" | "mem_table" => Ok(FlushType::MemTable),
+            other => Err(invalid_argument_error(&format!(
+                "invalid flush_type: {} (expected 'wal' or 'memtable')",
+                other
+            ))),
+        }
     }
 
     /// Open a database at the given path.
@@ -249,16 +269,14 @@ impl Database {
         }
 
         let put_opts = PutOptions { ttl: Ttl::Default };
-
-        let write_opts = WriteOptions {
-            await_durable: true,
-            seqnum: 0,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
-                .await
+                .await?;
+            handle.await_durable().await
         })?;
         self.increment_metric("db.put.count");
 
@@ -280,18 +298,23 @@ impl Database {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let put_opts = PutOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
 
-        // Parse await_durable
         let write_opts = Self::write_options_from_kwargs(&kwargs)?;
+        let await_durable = Self::await_durable_from_kwargs(&kwargs)?;
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .put_with_options(key.as_bytes(), value.as_bytes(), &put_opts, &write_opts)
-                .await
+                .await?;
+            if await_durable {
+                handle.await_durable().await?;
+            }
+            Ok(())
         })?;
         self.increment_metric("db.put_with_options.count");
 
@@ -307,15 +330,14 @@ impl Database {
             return Err(invalid_argument_error("key cannot be empty"));
         }
 
-        let write_opts = WriteOptions {
-            await_durable: true,
-            seqnum: 0,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .delete_with_options(key.as_bytes(), &write_opts)
-                .await
+                .await?;
+            handle.await_durable().await
         })?;
         self.increment_metric("db.delete.count");
 
@@ -333,11 +355,17 @@ impl Database {
         }
 
         let write_opts = Self::write_options_from_kwargs(&kwargs)?;
+        let await_durable = Self::await_durable_from_kwargs(&kwargs)?;
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .delete_with_options(key.as_bytes(), &write_opts)
-                .await
+                .await?;
+            if await_durable {
+                handle.await_durable().await?;
+            }
+            Ok(())
         })?;
         self.increment_metric("db.delete_with_options.count");
 
@@ -550,7 +578,10 @@ impl Database {
     /// * `batch` - The WriteBatch to write
     pub fn write(&self, batch: &WriteBatch) -> Result<(), Error> {
         let batch_inner = batch.take()?;
-        block_on_result(async { self.inner.write(batch_inner).await })?;
+        block_on_result(async {
+            let handle = self.inner.write(batch_inner).await?;
+            handle.await_durable().await
+        })?;
         Ok(())
     }
 
@@ -561,13 +592,19 @@ impl Database {
     /// * `kwargs` - Keyword arguments (await_durable, seqnum)
     pub fn write_with_options(&self, batch: &WriteBatch, kwargs: RHash) -> Result<(), Error> {
         let write_opts = Self::write_options_from_kwargs(&kwargs)?;
+        let await_durable = Self::await_durable_from_kwargs(&kwargs)?;
 
         let batch_inner = batch.take()?;
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .write_with_options(batch_inner, &write_opts)
-                .await
+                .await?;
+            if await_durable {
+                handle.await_durable().await?;
+            }
+            Ok(())
         })?;
 
         Ok(())
@@ -584,16 +621,14 @@ impl Database {
         }
 
         let merge_opts = MergeOptions { ttl: Ttl::Default };
-
-        let write_opts = WriteOptions {
-            await_durable: true,
-            seqnum: 0,
-        };
+        let write_opts = WriteOptions::default();
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
-                .await
+                .await?;
+            handle.await_durable().await
         })?;
 
         Ok(())
@@ -618,17 +653,23 @@ impl Database {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let merge_opts = MergeOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
 
         let write_opts = Self::write_options_from_kwargs(&kwargs)?;
+        let await_durable = Self::await_durable_from_kwargs(&kwargs)?;
 
         block_on_result(async {
-            self.inner
+            let handle = self
+                .inner
                 .merge_with_options(key.as_bytes(), value.as_bytes(), &merge_opts, &write_opts)
-                .await
+                .await?;
+            if await_durable {
+                handle.await_durable().await?;
+            }
+            Ok(())
         })?;
 
         Ok(())
@@ -708,6 +749,19 @@ impl Database {
         Ok(())
     }
 
+    /// Flush the database, choosing the flush type (SlateDB >= 0.16.0).
+    ///
+    /// # Arguments
+    /// * `flush_type` - "wal" to flush the WAL, or "memtable" to freeze and
+    ///   flush memtable entries to object storage.
+    pub fn flush_with_options(&self, flush_type: String) -> Result<(), Error> {
+        let options = FlushOptions {
+            flush_type: Self::parse_flush_type(&flush_type)?,
+        };
+        block_on_result(async { self.inner.flush_with_options(options).await })?;
+        Ok(())
+    }
+
     /// Return the database metrics registry.
     pub fn metrics(&self) -> Result<Metrics, Error> {
         Ok(Metrics::new(self.metrics.clone()))
@@ -716,6 +770,22 @@ impl Database {
     /// Close the database.
     pub fn close(&self) -> Result<(), Error> {
         block_on_result(async { self.inner.close().await })?;
+        Ok(())
+    }
+
+    /// Close the database, controlling the final flush (SlateDB >= 0.16.0).
+    ///
+    /// # Arguments
+    /// * `flush_type` - `Some("wal"|"memtable")` to flush before closing, or
+    ///   `None` to close without a final flush (writes that are not yet durable
+    ///   may be lost).
+    pub fn close_with_options(&self, flush_type: Option<String>) -> Result<(), Error> {
+        let flush_type = match flush_type {
+            Some(name) => Some(Self::parse_flush_type(&name)?),
+            None => None,
+        };
+        let options = CloseOptions { flush_type };
+        block_on_result(async { self.inner.close_with_options(options).await })?;
         Ok(())
     }
 }
@@ -772,9 +842,17 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         "_create_checkpoint",
         method!(Database::create_checkpoint, 1),
     )?;
-    class.define_method("flush", method!(Database::flush, 0))?;
+    class.define_method("_flush", method!(Database::flush, 0))?;
+    class.define_method(
+        "_flush_with_options",
+        method!(Database::flush_with_options, 1),
+    )?;
     class.define_method("_metrics", method!(Database::metrics, 0))?;
-    class.define_method("close", method!(Database::close, 0))?;
+    class.define_method("_close", method!(Database::close, 0))?;
+    class.define_method(
+        "_close_with_options",
+        method!(Database::close_with_options, 1),
+    )?;
 
     Ok(())
 }
