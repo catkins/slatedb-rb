@@ -109,7 +109,7 @@ impl Transaction {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let put_opts = PutOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
@@ -172,7 +172,7 @@ impl Transaction {
         let ttl = get_optional::<u64>(&kwargs, "ttl")?;
         let merge_opts = MergeOptions {
             ttl: match ttl {
-                Some(ms) => Ttl::ExpireAfter(ms),
+                Some(ms) => Ttl::ExpireAfterMillis(ms),
                 None => Ttl::Default,
             },
         };
@@ -395,7 +395,16 @@ impl Transaction {
             .take()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        block_on_result(async { txn.commit().await })?;
+        block_on_result(async {
+            // As of SlateDB 0.16.0, commit returns as soon as the write is in
+            // memory and hands back an optional WriteHandle (None for an empty
+            // or read-only transaction). Await durability to preserve the
+            // previous blocking-commit behavior.
+            if let Some(handle) = txn.commit().await? {
+                handle.await_durable().await?;
+            }
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -403,10 +412,7 @@ impl Transaction {
     pub fn commit_with_options(&self, kwargs: RHash) -> Result<(), Error> {
         let await_durable = get_optional::<bool>(&kwargs, "await_durable")?.unwrap_or(true);
         let seqnum = get_optional::<u64>(&kwargs, "seqnum")?.unwrap_or(0);
-        let write_opts = WriteOptions {
-            await_durable,
-            seqnum,
-        };
+        let write_opts = WriteOptions { seqnum };
 
         let txn = self
             .inner
@@ -414,7 +420,14 @@ impl Transaction {
             .take()
             .ok_or_else(|| closed_error("transaction is closed"))?;
 
-        block_on_result(async { txn.commit_with_options(&write_opts).await })?;
+        block_on_result(async {
+            if let Some(handle) = txn.commit_with_options(&write_opts).await? {
+                if await_durable {
+                    handle.await_durable().await?;
+                }
+            }
+            Ok(())
+        })?;
         Ok(())
     }
 
