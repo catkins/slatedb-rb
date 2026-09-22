@@ -1,0 +1,19 @@
+caches:
+  - name: gems
+    cache_key:
+      - gems_v1
+      - { agent: os }
+      - { agent: arch }
+      - { env: MISE_ENV, fallback_limit: true }
+      - { checksum: [Gemfile, slatedb.gemspec, ".mise*.toml"] }
+    target_paths:
+      - vendor/bundle
+
+  - name: cargo_registry
+    cache_key:
+      - cargo_registry_v1
+      - { agent: os }
+      - { agent: arch, fallback_limit: true }
+      - { checksum: [Cargo.toml, "ext/**/Cargo.toml", .mise.toml] }
+    target_paths:
+      - ~/.cargo/registry

@@ -1,9 +1,8 @@
 agents:
   queue: hosted-linux
 
-cache: ".buildkite/cache-volume"
-
 env:
+  BUNDLE_PATH: vendor/bundle
   MISE_GITHUB_ATTESTATIONS: "false"
   MISE_RUBY_GITHUB_ATTESTATIONS: "false"
 
@@ -23,7 +22,9 @@ steps:
     steps:
       - label: ":package: {{matrix}} gem"
         command: |
+          buildkite-agent cache restore --name gems
           mise run release:build-gem
+          buildkite-agent cache save --name gems
           buildkite-agent artifact upload "pkg/*-{{matrix}}.gem"
         env:
           RELEASE_PLATFORM: "{{matrix}}"
@@ -44,7 +45,9 @@ steps:
   - label: ":package: ruby gem"
     key: ruby-gem
     command: |
+      buildkite-agent cache restore --name gems
       mise run release:build-ruby-gem
+      buildkite-agent cache save --name gems
       buildkite-agent artifact upload "pkg/*.gem"
     plugins:
       - mise#v1.1.4: *mise_plugin
@@ -72,6 +75,9 @@ steps:
       - macos-smoke
     if: build.tag != null && build.env("DRY_RUN") != "true"
     command: |
+      buildkite-agent cache restore --name gems
+      mise run deps
+      buildkite-agent cache save --name gems
       buildkite-agent artifact download "pkg/*.gem" .
       ls -lh pkg/*.gem
       mise run release:publish-gems

@@ -1,9 +1,8 @@
 agents:
   queue: hosted-linux
 
-cache: ".buildkite/cache-volume"
-
 env:
+  BUNDLE_PATH: vendor/bundle
   MISE_GITHUB_ATTESTATIONS: "false"
   MISE_RUBY_GITHUB_ATTESTATIONS: "false"
 
@@ -14,30 +13,45 @@ steps:
   - group: ":ruby: Build & Test"
     steps:
       - label: ":ruby: Ruby 3.3"
-        command: mise run ci:test
+        command: |
+          buildkite-agent cache restore --name gems --name cargo_registry
+          mise run ci:test
+          buildkite-agent cache save --name gems --name cargo_registry
         env:
           MISE_ENV: ruby-3.3
         plugins:
           - mise#v1.1.4: *mise_plugin
 
       - label: ":ruby: Ruby 3.4"
-        command: mise run ci:test
+        command: |
+          buildkite-agent cache restore --name gems --name cargo_registry
+          mise run ci:test
+          buildkite-agent cache save --name gems --name cargo_registry
         env:
           MISE_ENV: ruby-3.4
         plugins:
           - mise#v1.1.4: *mise_plugin
 
       - label: ":ruby: Ruby 4.0"
-        command: mise run ci:test
+        command: |
+          buildkite-agent cache restore --name gems --name cargo_registry
+          mise run ci:test
+          buildkite-agent cache save --name gems --name cargo_registry
         plugins:
           - mise#v1.1.4: *mise_plugin
 
   - label: ":rubocop: Lint"
-    command: mise run ci:rubocop
+    command: |
+      buildkite-agent cache restore --name gems
+      mise run ci:rubocop
+      buildkite-agent cache save --name gems
     plugins:
       - mise#v1.1.4: *mise_plugin
 
   - label: ":rust: Cargo Check & Clippy"
-    command: mise run ci:clippy
+    command: |
+      buildkite-agent cache restore --name cargo_registry
+      mise run ci:clippy
+      buildkite-agent cache save --name cargo_registry
     plugins:
       - mise#v1.1.4: *mise_plugin
