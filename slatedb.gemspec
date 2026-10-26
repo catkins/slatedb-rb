@@ -31,10 +31,10 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
   spec.extensions = ["ext/slatedb/extconf.rb"]
 
-  spec.add_dependency "rb_sys", "~> 0.9.128"
+  spec.add_dependency "rb_sys", "~> 0.9.130"
 
   spec.add_development_dependency "rake", "~> 13.4"
   spec.add_development_dependency "rake-compiler", "~> 1.3"
   spec.add_development_dependency "rspec", "~> 3.13"
-  spec.add_development_dependency "rubocop", "~> 1.86"
+  spec.add_development_dependency "rubocop", "~> 1.92"
 end

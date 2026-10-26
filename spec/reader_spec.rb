@@ -50,6 +50,35 @@ RSpec.describe SlateDb::Reader do
         end
       end
 
+      it "scans persisted ranges and prefix subranges in descending order" do
+        SlateDb::Database.open(@path, url: @url) do |db|
+          %w[user:1 user:2 user:3 user:4 user:5].each { |key| db.put(key, "old") }
+          db.flush(flush_type: :memtable)
+          db.put("user:2", "updated")
+          db.delete("user:3")
+          db.flush(flush_type: :memtable)
+        end
+
+        SlateDb::Reader.open(@path, url: @url) do |reader|
+          expected = [["user:4", "old"], ["user:2", "updated"]]
+          expect(reader.scan("user:2", "user:5", order: :desc).to_a).to eq(expected)
+
+          entries = []
+          reader.scan_prefix("user:", from: "2", to: "5", order: "descending") do |key, value|
+            entries << [key, value]
+          end
+          expect(entries).to eq(expected)
+          expect(reader.scan("user:2", "user:5", order: :asc).to_a).to eq(expected.reverse)
+        end
+      end
+
+      it "rejects invalid scan orders" do
+        SlateDb::Reader.open(@path, url: @url) do |reader|
+          expect { reader.scan("a", order: :sideways) }.to raise_error(SlateDb::InvalidArgumentError)
+          expect { reader.scan_prefix("a", order: :sideways) }.to raise_error(SlateDb::InvalidArgumentError)
+        end
+      end
+
       # SlateDB 0.15.0 replaced the reader's Option<checkpoint_id> with an explicit
       # DbReaderMode. follow_latest selects DbReaderMode::FollowLatest, which tails the
       # latest manifest without creating a checkpoint.

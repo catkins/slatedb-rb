@@ -5,7 +5,7 @@ use magnus::prelude::*;
 use magnus::{function, method, Error, RHash, Ruby};
 use slatedb::config::{
     CloseOptions, DurabilityLevel, FlushOptions, FlushType, MergeOptions, PutOptions, ReadOptions,
-    ScanOptions, Ttl, WriteOptions,
+    ScanOptions, Settings, Ttl, WriteOptions,
 };
 use slatedb::object_store::memory::InMemory;
 use slatedb::{Db, IsolationLevel, IterationOrder, KeyValue};
@@ -120,6 +120,23 @@ impl Database {
     pub fn open(path: String, url: Option<String>, kwargs: RHash) -> Result<Self, Error> {
         // Try string-based merge operator first, then proc-based
         let merge_operator = parse_merge_operator(&kwargs)?.or(parse_merge_operator_proc(&kwargs)?);
+        let checkpoint_lifetime = get_optional::<u64>(&kwargs, "compactor_checkpoint_lifetime")?
+            .map(std::time::Duration::from_millis);
+        let consolidation_threshold =
+            get_optional::<usize>(&kwargs, "sorted_run_consolidation_threshold")?;
+
+        let mut settings = Settings::default();
+        if let Some(compactor) = settings.compactor_options.as_mut() {
+            if let Some(lifetime) = checkpoint_lifetime {
+                compactor.checkpoint_lifetime = lifetime;
+            }
+            if let Some(threshold) = consolidation_threshold {
+                compactor.scheduler_options.insert(
+                    "sorted_run_consolidation_threshold".to_string(),
+                    threshold.to_string(),
+                );
+            }
+        }
 
         let db = block_on_result(async {
             let object_store: Arc<dyn slatedb::object_store::ObjectStore> =
@@ -129,7 +146,7 @@ impl Database {
                     Arc::new(InMemory::new())
                 };
 
-            let mut builder = Db::builder(path, object_store);
+            let mut builder = Db::builder(path, object_store).with_settings(settings);
             if let Some(merge_operator) = merge_operator {
                 builder = builder.with_merge_operator(merge_operator);
             }
