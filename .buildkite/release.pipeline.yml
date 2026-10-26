@@ -67,6 +67,7 @@ steps:
   - label: ":rubygems: Publish"
     key: publish
     depends_on:
+      - verify-tag
       - native-gems
       - ruby-gem
       - macos-smoke
