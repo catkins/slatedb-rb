@@ -36,6 +36,26 @@ RSpec.describe SlateDb::Database do
 
       expect(result).to eq("result")
     end
+
+    it "accepts compaction controls alongside a merge operator" do
+      SlateDb::Database.open(tmpdir, merge_operator: :concat,
+                                     compactor_checkpoint_lifetime: 120_000,
+                                     sorted_run_consolidation_threshold: 4) do |db|
+        db.put("key", "before")
+        db.merge("key", "-after")
+        expect(db.get("key")).to eq("before-after")
+      end
+    end
+
+    it "rejects negative compaction controls" do
+      expect do
+        SlateDb::Database.open(tmpdir, compactor_checkpoint_lifetime: -1)
+      end.to raise_error(RangeError)
+
+      expect do
+        SlateDb::Database.open(tmpdir, sorted_run_consolidation_threshold: -1)
+      end.to raise_error(RangeError)
+    end
   end
 
   describe "#put and #get" do
@@ -178,6 +198,26 @@ RSpec.describe SlateDb::Database do
   end
 
   describe "persistence with local file URL" do
+    it "persists and scans keys larger than the old 64 KiB limit" do
+      file_url = "file://#{tmpdir}"
+      key = "k" * 65_536
+
+      SlateDb::Database.open("large_keys", url: file_url) do |db|
+        db.batch do |batch|
+          batch.put(key, "large")
+          batch.put("z", "last")
+        end
+        db.flush(flush_type: :memtable)
+      end
+
+      SlateDb::Database.open("large_keys", url: file_url) do |db|
+        expect(db.get(key)).to eq("large")
+        expect(db.scan("k", "z").to_a).to eq([[key, "large"]])
+        db.delete(key)
+        expect(db.get(key)).to be_nil
+      end
+    end
+
     it "persists data across database reopens using file:// URL" do
       file_url = "file://#{tmpdir}"
 

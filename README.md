@@ -64,6 +64,34 @@ SlateDb::Database.open("/tmp/mydb") do |db|
 end  # automatically closed
 ```
 
+### Compaction Controls
+
+SlateDB 0.17 adds controls for how long compaction inputs remain protected from
+garbage collection and when to consolidate sorted runs:
+
+```ruby
+SlateDb::Database.open("mydb",
+                       url: "s3://mybucket/path",
+                       compactor_checkpoint_lifetime: 30 * 60_000,
+                       sorted_run_consolidation_threshold: 8) do |db|
+  db.put("key", "value")
+end
+```
+
+`compactor_checkpoint_lifetime` is in milliseconds and defaults to 15 minutes.
+Reads, scans, snapshots, and transactions using old compaction inputs must finish
+within that time; after it expires, garbage collection can remove those inputs.
+
+`sorted_run_consolidation_threshold` starts fallback consolidation when the
+projected sorted-run count exceeds the threshold. It is not a hard limit.
+Zero disables it (the default); use at least two to enable it. SlateDB warns and
+disables the trigger for one. Low thresholds can increase storage reads and writes.
+
+### Key Size
+
+Keys can now exceed the previous 65,535-byte limit, up to SlateDB's new
+4,294,967,295-byte limit. Very large keys still require enough memory to process.
+
 ### Persistent Storage
 
 For persistent storage, provide an object store URL:
@@ -499,6 +527,14 @@ SlateDb::Reader.open("/tmp/mydb", url: "s3://bucket/path") do |reader|
   value = reader.get("key")
   
   reader.scan("prefix:").each do |k, v|
+    puts "#{k}: #{v}"
+  end
+
+  # Range and prefix scans accept :asc/:ascending or :desc/:descending.
+  reader.scan("user:100", "user:200", order: :desc).each do |k, v|
+    puts "#{k}: #{v}"
+  end
+  reader.scan_prefix("user:", from: "100", to: "200", order: :desc).each do |k, v|
     puts "#{k}: #{v}"
   end
 end

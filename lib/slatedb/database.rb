@@ -12,6 +12,12 @@ module SlateDb
       # @param merge_operator [Symbol, String, Proc, nil] Optional merge operator.
       #   Can be a symbol/string ("string_concat" or "concat") or a Proc/lambda
       #   that takes (key, existing_value, new_value) and returns the merged value.
+      # @param compactor_checkpoint_lifetime [Integer, nil] How long compaction inputs
+      #   are protected from garbage collection, in milliseconds (default: 15 minutes).
+      #   Reads using those inputs must finish within this time.
+      # @param sorted_run_consolidation_threshold [Integer, nil] Sorted-run count above
+      #   which fallback consolidation starts. Zero disables it (default); use at least
+      #   two to enable it. One is disabled by SlateDB with a warning. This is not a hard limit.
       # @yield [db] If a block is given, yields the database and ensures it's closed
       # @return [Database] The opened database (or block result if block given)
       #
@@ -38,8 +44,12 @@ module SlateDb
       #   db.merge("counter", "3")
       #   db.get("counter") # => "8"
       #
-      def open(path, url: nil, merge_operator: nil)
-        opts = {}
+      def open(path, url: nil, merge_operator: nil,
+               compactor_checkpoint_lifetime: nil, sorted_run_consolidation_threshold: nil)
+        opts = {
+          compactor_checkpoint_lifetime: compactor_checkpoint_lifetime,
+          sorted_run_consolidation_threshold: sorted_run_consolidation_threshold
+        }.compact
 
         case merge_operator
         when Symbol, String
