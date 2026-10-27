@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if command -v apt-get >/dev/null 2>&1; then
+  echo "--- Install Ruby build dependencies before mise setup"
+  if [ "$(id -u)" -eq 0 ]; then
+    apt-get update
+    apt-get install -y --no-install-recommends libyaml-dev libffi-dev
+  else
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends libyaml-dev libffi-dev
+  fi
+fi
