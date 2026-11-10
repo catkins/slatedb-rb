@@ -52,6 +52,26 @@ RSpec.describe SlateDb::Transaction do
   end
 
   describe "#scan" do
+    it "orders ranges and prefix scans including pending writes and deletes" do
+      SlateDb::Database.open(tmpdir) do |db|
+        %w[user:1 user:2 user:3 user:4].each { |key| db.put(key, key.upcase) }
+        db.transaction do |txn|
+          txn.delete("user:3")
+          txn.put("user:2", "pending")
+          txn.put("user:25", "inserted")
+          expected = [["user:25", "inserted"], ["user:2", "pending"]]
+          expect(txn.scan("user:2", "user:4", order: :desc).to_a).to eq(expected)
+          entries = []
+          txn.scan_prefix("user:", from: "2", to: "4", order: "descending") do |key, value|
+            entries << [key, value]
+          end
+          expect(entries).to eq(expected)
+          expect(txn.scan("user:2", "user:4", order: :asc).to_a).to eq(expected.reverse)
+          expect { txn.scan("user:", order: :unknown) }.to raise_error(SlateDb::InvalidArgumentError)
+        end
+      end
+    end
+
     it "scans keys within transaction" do
       SlateDb::Database.open(tmpdir) do |db|
         txn = db.begin_transaction

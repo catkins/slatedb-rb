@@ -17,6 +17,7 @@
 use magnus::{Error, Ruby};
 
 mod admin;
+mod checkpoint;
 mod database;
 mod errors;
 mod iterator;
@@ -40,6 +41,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     errors::define_exceptions(ruby, &module)?;
 
     // Define core classes
+    checkpoint::define_checkpoint_class(ruby, &module)?;
     database::define_database_class(ruby, &module)?;
     iterator::define_iterator_class(ruby, &module)?;
     write_batch::define_write_batch_class(ruby, &module)?;

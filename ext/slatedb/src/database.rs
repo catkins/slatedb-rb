@@ -10,9 +10,10 @@ use slatedb::config::{
 use slatedb::object_store::memory::InMemory;
 use slatedb::{Db, IsolationLevel, IterationOrder, KeyValue};
 
+use crate::checkpoint::CheckpointHandle;
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
-use crate::merge_ops::{parse_merge_operator, parse_merge_operator_proc};
+use crate::merge_ops::parse_merge_operator;
 use crate::metrics::Metrics;
 use crate::runtime::block_on_result;
 use crate::snapshot::Snapshot;
@@ -76,6 +77,10 @@ impl Database {
             opts.cache_blocks = cb;
         }
 
+        if let Some(limit) = get_optional::<usize>(kwargs, "max_concurrent_sources")? {
+            opts.max_concurrent_sources = limit;
+        }
+
         Ok(opts)
     }
 
@@ -113,20 +118,25 @@ impl Database {
     /// # Arguments
     /// * `path` - The path identifier for the database
     /// * `url` - Optional object store URL (e.g., "s3://bucket/path")
-    /// * `kwargs` - Additional options (merge_operator, merge_operator_proc)
+    /// * `kwargs` - Additional options (merge_operator and compaction settings)
     ///
     /// # Returns
     /// A new Database instance
     pub fn open(path: String, url: Option<String>, kwargs: RHash) -> Result<Self, Error> {
-        // Try string-based merge operator first, then proc-based
-        let merge_operator = parse_merge_operator(&kwargs)?.or(parse_merge_operator_proc(&kwargs)?);
+        let merge_operator = parse_merge_operator(&kwargs)?;
         let checkpoint_lifetime = get_optional::<u64>(&kwargs, "compactor_checkpoint_lifetime")?
             .map(std::time::Duration::from_millis);
         let consolidation_threshold =
             get_optional::<usize>(&kwargs, "sorted_run_consolidation_threshold")?;
+        let incremental_compaction =
+            get_optional::<bool>(&kwargs, "experimental_incremental_compaction")?;
+        let block_alignment = get_optional::<bool>(&kwargs, "sst_block_alignment")?;
 
         let mut settings = Settings::default();
         if let Some(compactor) = settings.compactor_options.as_mut() {
+            if let Some(enabled) = incremental_compaction {
+                compactor.enable_experimental_incremental_compaction = enabled;
+            }
             if let Some(lifetime) = checkpoint_lifetime {
                 compactor.checkpoint_lifetime = lifetime;
             }
@@ -147,6 +157,9 @@ impl Database {
                 };
 
             let mut builder = Db::builder(path, object_store).with_settings(settings);
+            if let Some(aligned) = block_alignment {
+                builder = builder.with_sst_block_alignment(aligned);
+            }
             if let Some(merge_operator) = merge_operator {
                 builder = builder.with_merge_operator(merge_operator);
             }
@@ -713,7 +726,10 @@ impl Database {
             }
         };
 
-        let txn = block_on_result(async { self.inner.begin(isolation_level).await })?;
+        let txn = self
+            .inner
+            .begin(isolation_level)
+            .map_err(crate::errors::map_error)?;
         Ok(Transaction::new(txn))
     }
 
@@ -722,7 +738,7 @@ impl Database {
     /// # Returns
     /// A new Snapshot instance
     pub fn snapshot(&self) -> Result<Snapshot, Error> {
-        let snap = block_on_result(async { self.inner.snapshot().await })?;
+        let snap = self.inner.snapshot().map_err(crate::errors::map_error)?;
         Ok(Snapshot::new(snap))
     }
 
@@ -734,8 +750,25 @@ impl Database {
     /// # Returns
     /// Hash with id (UUID string) and manifest_id (int)
     pub fn create_checkpoint(&self, kwargs: RHash) -> Result<RHash, Error> {
+        self.begin_checkpoint(kwargs)?.wait()
+    }
+
+    pub fn begin_checkpoint(&self, kwargs: RHash) -> Result<CheckpointHandle, Error> {
         use slatedb::config::{CheckpointOptions, CheckpointScope};
 
+        let scope = match get_optional::<String>(&kwargs, "scope")?
+            .as_deref()
+            .unwrap_or("durable")
+        {
+            "durable" => CheckpointScope::Durable,
+            "all" => CheckpointScope::All,
+            other => {
+                return Err(invalid_argument_error(&format!(
+                    "invalid scope: {} (expected 'durable' or 'all')",
+                    other
+                )))
+            }
+        };
         let lifetime =
             get_optional::<u64>(&kwargs, "lifetime")?.map(std::time::Duration::from_millis);
         let name = get_optional::<String>(&kwargs, "name")?;
@@ -746,18 +779,9 @@ impl Database {
             name,
         };
 
-        let result = block_on_result(async {
-            self.inner
-                .create_checkpoint(CheckpointScope::Durable, &options)
-                .await
-        })?;
+        let result = block_on_result(async { self.inner.begin_checkpoint(scope, &options).await })?;
 
-        let ruby = Ruby::get().expect("Ruby runtime not available");
-        let hash = ruby.hash_new();
-        hash.aset(ruby.to_symbol("id"), result.id.to_string())?;
-        hash.aset(ruby.to_symbol("manifest_id"), result.manifest_id)?;
-
-        Ok(hash)
+        Ok(CheckpointHandle::new(result))
     }
 
     /// Flush the database to ensure durability.
@@ -859,6 +883,7 @@ pub fn define_database_class(ruby: &Ruby, module: &magnus::RModule) -> Result<()
         "_create_checkpoint",
         method!(Database::create_checkpoint, 1),
     )?;
+    class.define_method("_begin_checkpoint", method!(Database::begin_checkpoint, 1))?;
     class.define_method("_flush", method!(Database::flush, 0))?;
     class.define_method(
         "_flush_with_options",

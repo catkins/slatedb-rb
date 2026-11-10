@@ -30,6 +30,38 @@ gem install slatedb
 
 Precompiled native gems are published for common Linux and Darwin platforms. Building from source still requires a Rust toolchain.
 
+## Upgrading to SlateDB 0.18.1
+
+This update moves the Rust engine from 0.17.0 to 0.18.1. Existing database files
+remain readable. New Ruby options keep the existing defaults unless enabled.
+
+- Two-phase checkpoints: `begin_checkpoint` returns a handle with `id` and `wait`.
+  Both checkpoint methods accept `scope: :all` to capture pending writes, or
+  `scope: :durable` (the existing default) for writes already durable.
+- Point reads accept `max_concurrent_sources:` on databases, readers, snapshots,
+  and transactions; database metadata reads accept it too.
+- `Database.open` accepts `experimental_incremental_compaction:` and
+  `sst_block_alignment:`. Both are disabled by default; see the warnings below.
+- Snapshot and transaction range/prefix scans now accept `order:`, like database
+  and reader scans. Reader `merge_operator:` is now applied rather than ignored.
+- **Breaking:** Ruby Proc/lambda merge operators are no longer accepted. They
+  silently used concatenation on other threads, which could change stored values.
+  Keep `:concat` / `:string_concat` for concatenation. For custom updates, use a
+  serializable transaction that reads the value and writes the computed result;
+  handle `SlateDb::TransactionError` conflicts in the application. Databases with
+  unresolved custom merge operands need an application-specific migration before
+  upgrading. Do not reopen them with `:concat` unless concatenation was their
+  intended merge rule.
+- Reader disk-cache keywords remain supported, but upstream deprecated the
+  underlying `CachedObjectStore` in 0.18.1. The new mirror and Rust trait-based
+  extension APIs are not exposed by this gem yet.
+
+Upstream also fixes clone-compaction retention/data-loss cases, writer ownership
+validation after WAL replay, write stalls, upload retry/concurrency behavior, and
+iterator fetch cancellation. It improves memtable seeks and point-read/scan work.
+See the full [0.18.0 release notes](https://github.com/slatedb/slatedb/releases/tag/v0.18.0)
+and [0.18.1 release notes](https://github.com/slatedb/slatedb/releases/tag/v0.18.1).
+
 ## Usage
 
 ### Basic Operations
@@ -64,6 +96,19 @@ SlateDb::Database.open("/tmp/mydb") do |db|
 end  # automatically closed
 ```
 
+### Point-Read Concurrency
+
+```ruby
+db.get("key", max_concurrent_sources: 4, cache_blocks: false)
+db.get_entry("key", max_concurrent_sources: 4) # value plus sequence/timestamps
+```
+
+`max_concurrent_sources` defaults to 1 (serial fetching); zero also means 1.
+SlateDB checks the newest source alone, then fetches up to this many sources
+concurrently after a miss. Higher values can reduce latency but increase object
+store requests and bandwidth. The same keyword works with `get` on readers,
+snapshots, and transactions. It does not change isolation or durability.
+
 ### Compaction Controls
 
 SlateDB 0.17 adds controls for how long compaction inputs remain protected from
@@ -86,6 +131,32 @@ within that time; after it expires, garbage collection can remove those inputs.
 projected sorted-run count exceeds the threshold. It is not a hard limit.
 Zero disables it (the default); use at least two to enable it. SlateDB warns and
 disables the trigger for one. Low thresholds can increase storage reads and writes.
+
+SlateDB 0.18 adds an opt-in experimental mode:
+
+```ruby
+SlateDb::Database.open("mydb", url: "s3://mybucket/path",
+                       experimental_incremental_compaction: true) do |db|
+  db.put("key", "value")
+end
+```
+
+This publishes output from sorted-run compactions at most once a minute before
+the full compaction finishes. It can reduce read amplification and allow earlier
+storage reclamation after the compactor checkpoint expires. Compactions with L0
+inputs still publish only when complete. It is disabled by default, experimental,
+and may change or disappear upstream.
+
+### SST Block Alignment
+
+`Database.open(..., sst_block_alignment: true)` pads SST data blocks to 4 KiB
+boundaries, including oversized entries. It is disabled by default, uses more
+storage, and cannot be combined with compression.
+
+**Upgrade every reader before enabling alignment on a writer.** Older engines
+that do not understand padded SSTs cannot read them. Once padded files exist,
+rolling those readers back is not safe; disabling the option does not rewrite
+existing files.
 
 ### Key Size
 
@@ -341,52 +412,18 @@ db.batch do |b|
 end
 ```
 
-#### Custom Merge Operators
-
-You can provide a Ruby Proc/lambda as a custom merge operator:
-
-```ruby
-# Counter merge operator (adds numbers)
-counter_merge = ->(key, existing, new_value) {
-  existing_num = existing ? existing.to_i : 0
-  (existing_num + new_value.to_i).to_s
-}
-
-SlateDb::Database.open("/tmp/mydb", merge_operator: counter_merge) do |db|
-  db.merge("visits", "1")
-  db.merge("visits", "1")
-  db.merge("visits", "1")
-
-  db.get("visits")  # => "3"
-end
-
-# Max value merge operator
-max_merge = ->(key, existing, new_value) {
-  existing_num = existing ? existing.to_i : 0
-  new_num = new_value.to_i
-  [existing_num, new_num].max.to_s
-}
-
-SlateDb::Database.open("/tmp/mydb", merge_operator: max_merge) do |db|
-  db.merge("high_score", "100")
-  db.merge("high_score", "250")
-  db.merge("high_score", "150")
-
-  db.get("high_score")  # => "250"
-end
-```
-
-The proc receives three arguments:
-- `key` - The key being merged
-- `existing` - The existing value (nil if no value exists)
-- `new_value` - The new merge operand
-
-**Note:** Custom Proc merge operators work best with direct `db.merge()` calls. When used with transactions or batches, some merge operations may be processed on background threads and fall back to string concatenation.
-
 #### Available Merge Operators
 
 - `:string_concat` (or `:concat`) - Concatenates byte values (built-in)
-- Any `Proc` or `lambda` - Custom merge logic
+
+Ruby Proc/lambda operators are rejected. Use a serializable read/modify/write
+transaction for custom logic, with application-level conflict handling:
+
+```ruby
+db.transaction(isolation: :serializable) do |txn|
+  txn.put("visits", (txn.get("visits").to_i + 1).to_s)
+end
+```
 
 ### Write Batches
 
@@ -495,6 +532,29 @@ SlateDb::Database.open("/tmp/mydb", url: "file:///tmp/mydb") do |db|
 end
 ```
 
+`create_checkpoint` waits until the checkpoint is stored. Its default
+`scope: :durable` preserves the existing behavior. To include writes made with
+`await_durable: false`, use `scope: :all`; no separate `flush` is needed.
+
+To separate capturing the write boundary from waiting for storage:
+
+```ruby
+db.put("key", "before", await_durable: false)
+handle = db.begin_checkpoint(scope: :all, name: "backup", lifetime: 3_600_000)
+id = handle.id                      # UUID is available immediately
+db.put("key", "after")             # not part of this checkpoint
+checkpoint = handle.wait            # => { id: id, manifest_id: ... }
+```
+
+With `scope: :all`, writes completed before `begin_checkpoint` starts are included;
+writes started after it returns are excluded. Concurrent writes during the call
+may be included. Starting the checkpoint can still wait for internal flush work;
+it is not a fully nonblocking Ruby call. `wait` releases the Ruby GVL while
+waiting, consumes the handle, and raises `SlateDb::ClosedError` if called again.
+`id` remains readable. Dropping the handle does not cancel or delete the checkpoint.
+If waiting fails, use the UUID with `Admin#list_checkpoints` to check its outcome
+before starting another checkpoint.
+
 ### Snapshots
 
 Point-in-time consistent reads:
@@ -516,6 +576,11 @@ snap = db.snapshot
 value = snap.get("key")
 snap.close
 ```
+
+Range and prefix scans on snapshots and transactions accept the same `order:`
+keyword as databases and readers, including `:asc`/`:ascending` and
+`:desc`/`:descending`. Bounds remain lower-inclusive and upper-exclusive in
+either direction.
 
 ### Reader (Read-Only Access)
 
@@ -568,6 +633,14 @@ SlateDb::Reader.open("/tmp/mydb",
 end
 ```
 
+When the writer uses `merge_operator: :concat`, pass the same operator to
+`Reader.open` so WAL replay and reads apply the correct merge rule. Unknown
+operator names now raise `SlateDb::InvalidArgumentError` instead of being ignored.
+
+The `cache_root` and `max_open_file_handles` keywords still work, but SlateDB
+0.18.1 deprecates this legacy disk cache in favor of its separate mirror crate or
+tiered block cache. Those replacement APIs are not yet exposed here.
+
 ### Admin Operations
 
 Administrative operations for database management:
@@ -594,9 +667,6 @@ admin.delete_checkpoint("uuid")
 # Garbage Collection
 admin.run_gc                                    # Run with default settings
 admin.run_gc(min_age: 3600_000)                 # Set min age for all directories (1 hour)
-admin.run_gc(manifest_min_age: 86400_000)       # Custom age for manifest (1 day)
-admin.run_gc(wal_min_age: 60_000)               # Custom age for WAL (1 minute)
-admin.run_gc(compacted_min_age: 60_000)         # Custom age for compacted (1 minute)
 
 # Delete a database (SlateDB >= 0.16.0)
 would_delete = admin.delete_db                  # Dry run: returns the object paths

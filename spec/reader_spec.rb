@@ -50,6 +50,24 @@ RSpec.describe SlateDb::Reader do
         end
       end
 
+      it "uses the configured merge operator when replaying WAL operands" do
+        SlateDb::Database.open(@path, url: @url, merge_operator: :concat) do |db|
+          db.put("merged", "base")
+          db.merge("merged", "-first")
+          db.merge("merged", "-second")
+          db.flush(flush_type: :wal)
+
+          SlateDb::Reader.open(@path, url: @url, merge_operator: :concat) do |reader|
+            expect(reader.get("merged")).to eq("base-first-second")
+          end
+        end
+      end
+
+      it "rejects unknown merge operators instead of silently ignoring them" do
+        expect { SlateDb::Reader.open(@path, url: @url, merge_operator: :unknown) }
+          .to raise_error(SlateDb::InvalidArgumentError, /invalid merge_operator/)
+      end
+
       it "scans persisted ranges and prefix subranges in descending order" do
         SlateDb::Database.open(@path, url: @url) do |db|
           %w[user:1 user:2 user:3 user:4 user:5].each { |key| db.put(key, "old") }
