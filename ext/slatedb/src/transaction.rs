@@ -74,6 +74,10 @@ impl Transaction {
             opts.cache_blocks = cb;
         }
 
+        if let Some(limit) = get_optional::<usize>(&kwargs, "max_concurrent_sources")? {
+            opts.max_concurrent_sources = limit;
+        }
+
         let guard = self.inner.borrow();
         let txn = guard
             .as_ref()

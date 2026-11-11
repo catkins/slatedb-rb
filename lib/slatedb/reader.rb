@@ -21,6 +21,7 @@ module SlateDb
       # @param cache_root [String, nil] Root folder for the reader's local on-disk
       #   object-store cache. Setting this enables the cached object store; when it is
       #   not set the cache (and `max_open_file_handles`) has no effect.
+      #   This legacy cache is deprecated upstream in SlateDB 0.18.1.
       # @param max_open_file_handles [Integer, nil] Maximum number of file handles to keep
       #   open in the reader's file-handle cache. When the limit is reached, the least
       #   recently used handle is closed (default: 1000). Only takes effect when
@@ -54,29 +55,31 @@ module SlateDb
                manifest_poll_interval: nil, checkpoint_lifetime: nil,
                max_memtable_bytes: nil, cache_root: nil, max_open_file_handles: nil,
                merge_operator: nil)
-        opts = {}
-        opts[:follow_latest] = follow_latest unless follow_latest.nil?
-        opts[:manifest_poll_interval] = manifest_poll_interval if manifest_poll_interval
-        opts[:checkpoint_lifetime] = checkpoint_lifetime if checkpoint_lifetime
-        opts[:max_memtable_bytes] = max_memtable_bytes if max_memtable_bytes
-        opts[:cache_root] = cache_root if cache_root
-        opts[:max_open_file_handles] = max_open_file_handles if max_open_file_handles
-        opts[:merge_operator] = merge_operator.to_s if merge_operator
+        unless merge_operator.nil? || merge_operator.is_a?(Symbol) || merge_operator.is_a?(String)
+          raise ArgumentError, "merge_operator must be :string_concat or :concat; Ruby callbacks are not supported"
+        end
+
+        opts = {
+          follow_latest: follow_latest,
+          manifest_poll_interval: manifest_poll_interval,
+          checkpoint_lifetime: checkpoint_lifetime,
+          max_memtable_bytes: max_memtable_bytes,
+          cache_root: cache_root,
+          max_open_file_handles: max_open_file_handles,
+          merge_operator: merge_operator&.to_s
+        }.compact
 
         reader = _open(path, url, checkpoint_id, opts)
+        return reader unless block_given?
 
-        if block_given?
+        begin
+          yield reader
+        ensure
           begin
-            yield reader
-          ensure
-            begin
-              reader.close
-            rescue StandardError
-              nil
-            end
+            reader.close
+          rescue StandardError
+            nil
           end
-        else
-          reader
         end
       end
     end
@@ -87,13 +90,16 @@ module SlateDb
     # @param durability_filter [String, nil] Filter by durability level ("remote" or "memory")
     # @param dirty [Boolean, nil] Whether to include uncommitted data
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
+    # @param max_concurrent_sources [Integer, nil] Concurrent sources after the first
+    #   miss (default: 1; zero also means serial fetching).
     # @return [String, nil] The value, or nil if not found
     #
-    def get(key, durability_filter: nil, dirty: nil, cache_blocks: nil)
+    def get(key, durability_filter: nil, dirty: nil, cache_blocks: nil, max_concurrent_sources: nil)
       opts = {}
       opts[:durability_filter] = durability_filter.to_s if durability_filter
       opts[:dirty] = dirty unless dirty.nil?
       opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+      opts[:max_concurrent_sources] = max_concurrent_sources unless max_concurrent_sources.nil?
 
       if opts.empty?
         _get(key)

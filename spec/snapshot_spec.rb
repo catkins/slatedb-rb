@@ -46,6 +46,25 @@ RSpec.describe SlateDb::Snapshot do
   end
 
   describe "#scan" do
+    it "orders bounded ranges and prefix scans without seeing later writes" do
+      SlateDb::Database.open(tmpdir) do |db|
+        %w[user:1 user:2 user:3 user:4].each { |key| db.put(key, key.upcase) }
+        db.snapshot do |snapshot|
+          db.put("user:2", "later")
+          expected = [["user:3", "USER:3"], ["user:2", "USER:2"]]
+          expect(snapshot.scan("user:2", "user:4", order: :desc).to_a).to eq(expected)
+          entries = []
+          snapshot.scan_prefix("user:", from: "2", to: "4", order: "descending") do |key, value|
+            entries << [key, value]
+          end
+          expect(entries).to eq(expected)
+          expect(snapshot.scan("user:2", "user:4", order: :asc).to_a).to eq(expected.reverse)
+          expect { snapshot.scan_prefix("user:", order: :unknown) }
+            .to raise_error(SlateDb::InvalidArgumentError)
+        end
+      end
+    end
+
     it "scans keys from the snapshot" do
       SlateDb::Database.open(tmpdir) do |db|
         db.put("a", "1")

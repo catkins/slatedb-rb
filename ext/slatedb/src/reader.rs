@@ -9,6 +9,7 @@ use slatedb::IterationOrder;
 
 use crate::errors::invalid_argument_error;
 use crate::iterator::Iterator;
+use crate::merge_ops::parse_merge_operator;
 use crate::runtime::block_on_result;
 use crate::utils::{get_optional, prefix_subrange_from_kwargs, resolve_object_store};
 
@@ -57,6 +58,7 @@ impl Reader {
         let max_open_file_handles = get_optional::<usize>(&kwargs, "max_open_file_handles")?;
         let cache_root = get_optional::<String>(&kwargs, "cache_root")?;
         let follow_latest = get_optional::<bool>(&kwargs, "follow_latest")?.unwrap_or(false);
+        let merge_operator = parse_merge_operator(&kwargs)?;
 
         // Resolve the reader mode from checkpoint_id / follow_latest.
         let mode = match checkpoint_id {
@@ -96,14 +98,23 @@ impl Reader {
             if let Some(skip_replay) = skip_wal_replay {
                 options.skip_wal_replay = skip_replay;
             }
-            if let Some(ref root) = cache_root {
-                options.object_store_cache_options.root_folder =
-                    Some(std::path::PathBuf::from(root));
+            #[allow(deprecated)]
+            {
+                if let Some(ref root) = cache_root {
+                    options.object_store_cache_options.root_folder =
+                        Some(std::path::PathBuf::from(root));
+                }
+                if let Some(max_handles) = max_open_file_handles {
+                    options.object_store_cache_options.max_open_file_handles = max_handles;
+                }
             }
-            if let Some(max_handles) = max_open_file_handles {
-                options.object_store_cache_options.max_open_file_handles = max_handles;
+            let mut builder = DbReader::builder(path, object_store)
+                .with_reader_mode(mode)
+                .with_options(options);
+            if let Some(operator) = merge_operator {
+                builder = builder.with_merge_operator(operator);
             }
-            DbReader::open(path, object_store, mode, options).await
+            builder.build().await
         })?;
 
         Ok(Self {
@@ -148,6 +159,10 @@ impl Reader {
 
         if let Some(cb) = get_optional::<bool>(&kwargs, "cache_blocks")? {
             opts.cache_blocks = cb;
+        }
+
+        if let Some(limit) = get_optional::<usize>(&kwargs, "max_concurrent_sources")? {
+            opts.max_concurrent_sources = limit;
         }
 
         let result =

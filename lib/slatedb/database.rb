@@ -9,15 +9,18 @@ module SlateDb
       #
       # @param path [String] The path identifier for the database
       # @param url [String, nil] Optional object store URL (e.g., "s3://bucket/path")
-      # @param merge_operator [Symbol, String, Proc, nil] Optional merge operator.
-      #   Can be a symbol/string ("string_concat" or "concat") or a Proc/lambda
-      #   that takes (key, existing_value, new_value) and returns the merged value.
+      # @param merge_operator [Symbol, String, nil] Optional built-in merge operator
+      #   (:string_concat or :concat). Ruby callbacks are not supported.
       # @param compactor_checkpoint_lifetime [Integer, nil] How long compaction inputs
       #   are protected from garbage collection, in milliseconds (default: 15 minutes).
       #   Reads using those inputs must finish within this time.
       # @param sorted_run_consolidation_threshold [Integer, nil] Sorted-run count above
       #   which fallback consolidation starts. Zero disables it (default); use at least
       #   two to enable it. One is disabled by SlateDB with a warning. This is not a hard limit.
+      # @param experimental_incremental_compaction [Boolean, nil] Publish sorted-run
+      #   compaction output before completion (experimental, disabled by default).
+      # @param sst_block_alignment [Boolean, nil] Align SST data blocks to 4 KiB
+      #   boundaries (disabled by default; incompatible with compression).
       # @yield [db] If a block is given, yields the database and ensures it's closed
       # @return [Database] The opened database (or block result if block given)
       #
@@ -34,31 +37,21 @@ module SlateDb
       # @example Open with S3 backend
       #   db = SlateDb::Database.open("/tmp/mydb", url: "s3://mybucket/path")
       #
-      # @example Open with a custom merge operator (Proc)
-      #   # Custom merge that adds numbers
-      #   db = SlateDb::Database.open("/tmp/mydb", merge_operator: ->(key, existing, new_val) {
-      #     existing_num = existing ? existing.to_i : 0
-      #     (existing_num + new_val.to_i).to_s
-      #   })
-      #   db.merge("counter", "5")
-      #   db.merge("counter", "3")
-      #   db.get("counter") # => "8"
-      #
       def open(path, url: nil, merge_operator: nil,
-               compactor_checkpoint_lifetime: nil, sorted_run_consolidation_threshold: nil)
+               compactor_checkpoint_lifetime: nil, sorted_run_consolidation_threshold: nil,
+               experimental_incremental_compaction: nil, sst_block_alignment: nil)
         opts = {
           compactor_checkpoint_lifetime: compactor_checkpoint_lifetime,
-          sorted_run_consolidation_threshold: sorted_run_consolidation_threshold
+          sorted_run_consolidation_threshold: sorted_run_consolidation_threshold,
+          experimental_incremental_compaction: experimental_incremental_compaction,
+          sst_block_alignment: sst_block_alignment
         }.compact
 
-        case merge_operator
-        when Symbol, String
-          opts[:merge_operator] = merge_operator.to_s
-        when Proc
-          # Store the proc to prevent GC and pass to Rust
-          @_merge_operator_proc = merge_operator
-          opts[:merge_operator_proc] = merge_operator
+        unless merge_operator.nil? || merge_operator.is_a?(Symbol) || merge_operator.is_a?(String)
+          raise ArgumentError, "merge_operator must be :string_concat or :concat; Ruby callbacks are not supported"
         end
+
+        opts[:merge_operator] = merge_operator.to_s if merge_operator
 
         db = _open(path, url, opts)
 
@@ -84,6 +77,8 @@ module SlateDb
     # @param durability_filter [String, nil] Filter by durability level ("remote" or "memory")
     # @param dirty [Boolean, nil] Whether to include uncommitted data
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
+    # @param max_concurrent_sources [Integer, nil] Concurrent sources to fetch after
+    #   the first source misses (default: 1; zero also means serial fetching).
     # @return [String, nil] The value, or nil if not found
     #
     # @example Basic get
@@ -92,11 +87,12 @@ module SlateDb
     # @example Get with options
     #   value = db.get("mykey", durability_filter: "memory", dirty: true)
     #
-    def get(key, durability_filter: nil, dirty: nil, cache_blocks: nil)
+    def get(key, durability_filter: nil, dirty: nil, cache_blocks: nil, max_concurrent_sources: nil)
       opts = {}
       opts[:durability_filter] = durability_filter.to_s if durability_filter
       opts[:dirty] = dirty unless dirty.nil?
       opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+      opts[:max_concurrent_sources] = max_concurrent_sources unless max_concurrent_sources.nil?
 
       if opts.empty?
         _get(key)
@@ -112,17 +108,20 @@ module SlateDb
     # @param dirty [Boolean, nil] Whether to include uncommitted data
     # @param cache_blocks [Boolean, nil] Whether to cache blocks
     # @return [Hash, nil] A hash with :key, :value, :seq, :create_ts, and :expire_ts, or nil if not found
+    # @param max_concurrent_sources [Integer, nil] Concurrent sources after the first
+    #   miss. See {#get}.
     #
     # @example Inspect metadata
     #   entry = db.get_key_value("mykey")
     #   entry[:value] # => "myvalue"
     #   entry[:seq]   # => sequence number
     #
-    def get_key_value(key, durability_filter: nil, dirty: nil, cache_blocks: nil)
+    def get_key_value(key, durability_filter: nil, dirty: nil, cache_blocks: nil, max_concurrent_sources: nil)
       opts = {}
       opts[:durability_filter] = durability_filter.to_s if durability_filter
       opts[:dirty] = dirty unless dirty.nil?
       opts[:cache_blocks] = cache_blocks unless cache_blocks.nil?
+      opts[:max_concurrent_sources] = max_concurrent_sources unless max_concurrent_sources.nil?
 
       if opts.empty?
         _get_key_value(key)
@@ -494,6 +493,8 @@ module SlateDb
     #
     # @param lifetime [Integer, nil] Checkpoint lifetime in milliseconds
     # @param name [String, nil] Optional name for the checkpoint
+    # @param scope [Symbol, String] :durable (default) captures durable writes;
+    #   :all also flushes pending writes before storing the checkpoint.
     # @return [Hash] Hash with :id (UUID string) and :manifest_id (integer)
     #
     # @example Create a named checkpoint
@@ -503,11 +504,24 @@ module SlateDb
     # @example Create a checkpoint with lifetime
     #   checkpoint = db.create_checkpoint(lifetime: 3600_000) # 1 hour
     #
-    def create_checkpoint(lifetime: nil, name: nil)
-      opts = {}
+    def create_checkpoint(lifetime: nil, name: nil, scope: :durable)
+      opts = { scope: scope.to_s }
       opts[:lifetime] = lifetime if lifetime
       opts[:name] = name if name
       _create_checkpoint(opts)
+    end
+
+    # Start a checkpoint without waiting for it to be stored.
+    #
+    # With scope: :all, captures writes completed before this call and excludes
+    # writes started after it returns. Writes during the call may be included.
+    # Options match {#create_checkpoint}. Dropping the handle does not cancel it.
+    # @return [CheckpointHandle] #id is available immediately; #wait returns the
+    #   :id/:manifest_id hash once stored and consumes the handle. A second wait
+    #   raises ClosedError. #id remains available after waiting.
+    def begin_checkpoint(lifetime: nil, name: nil, scope: :durable)
+      opts = { scope: scope.to_s, lifetime: lifetime, name: name }.compact
+      _begin_checkpoint(opts)
     end
 
     # Get database metrics registry.

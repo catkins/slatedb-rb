@@ -47,6 +47,27 @@ RSpec.describe SlateDb::Database do
       end
     end
 
+    it "reopens aligned SSTs written with experimental compaction enabled" do
+      url = "file://#{tmpdir}"
+      value = "x" * 9000
+      SlateDb::Database.open("db", url: url,
+                                   experimental_incremental_compaction: true,
+                                   sst_block_alignment: true) do |db|
+        db.put("large", value)
+        db.put("small", "value")
+        db.flush(flush_type: :memtable)
+      end
+
+      SlateDb::Database.open("db", url: url, sst_block_alignment: false) do |db|
+        expect(db.scan("large").to_a).to eq([["large", value], %w[small value]])
+        db.put("small", "updated")
+      end
+      SlateDb::Reader.open("db", url: url) do |reader|
+        expect(reader.get("large")).to eq(value)
+        expect(reader.get("small")).to eq("updated")
+      end
+    end
+
     it "rejects negative compaction controls" do
       expect do
         SlateDb::Database.open(tmpdir, compactor_checkpoint_lifetime: -1)
